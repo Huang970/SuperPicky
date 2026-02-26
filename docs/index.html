@@ -36,7 +36,7 @@
         <div class="container">
             <!-- Promo Video -->
             <div class="hero-video">
-                <video autoplay muted loop playsinline>
+                <video id="promo-video" autoplay muted loop playsinline>
                     <source src="img/SuperPickyHorizontal.mp4" type="video/mp4">
                 </video>
             </div>
@@ -630,13 +630,34 @@
         }
     </script>
     <script>
+        function updatePromoVideo(lang) {
+            const video = document.getElementById('promo-video');
+            if (!video) return;
+            const newSrc = lang === 'en' ? 'img/SuperPickyEN-16-9.mp4' : 'img/SuperPickyHorizontal.mp4';
+
+            // Check the current actual source of the video, either from its src attribute or the source element
+            const currentSrc = video.getAttribute('src') || (video.querySelector('source') && video.querySelector('source').getAttribute('src'));
+
+            if (currentSrc !== newSrc) {
+                video.src = newSrc;
+                video.load();
+                const playPromise = video.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => console.log('Autoplay prevented', e));
+                }
+            }
+        }
+
         function setLang(lang) {
             document.documentElement.setAttribute('data-lang', lang);
             document.querySelectorAll('.lang-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
-            event.target.classList.add('active');
+            if (window.event && window.event.target) {
+                window.event.target.classList.add('active');
+            }
             localStorage.setItem('lang', lang);
+            updatePromoVideo(lang);
         }
 
         // Load saved language
@@ -651,6 +672,7 @@
                     btn.classList.remove('active');
                 }
             });
+            updatePromoVideo(savedLang);
         });
 
         // Lightbox functionality
