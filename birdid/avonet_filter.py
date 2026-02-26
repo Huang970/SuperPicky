@@ -86,6 +86,76 @@ REGION_BOUNDS = {
     "TZ": (-12, -1, 29, 41),         # 坦桑尼亚
     "EG": (22, 32, 24.5, 37),        # 埃及
     "MA": (27, 36, -13, -1),         # 摩洛哥
+
+    # 澳大利亚各州
+    "AU-QLD": (-29,   -10,  138,    154),    # Queensland
+    "AU-NSW": (-37.5, -28,  141,    154),    # New South Wales
+    "AU-VIC": (-39.2, -34,  141,    150),    # Victoria
+    "AU-TAS": (-43.7, -39.5, 143.5, 148.5), # Tasmania
+    "AU-SA":  (-38,   -26,  129,    141),    # South Australia
+    "AU-WA":  (-35,   -13.5, 112.5, 129),   # Western Australia
+    "AU-NT":  (-26,   -10.5, 129,   138),   # Northern Territory
+    "AU-ACT": (-35.95,-35.1, 148.75,149.4), # Australian Capital Territory
+
+    # 美国各州 (south, north, west, east)
+    "US-AL": (30,   35,   -88.5, -84.9), "US-AK": (51,   72,   -168,  -130),
+    "US-AZ": (31.3, 37,   -114.8,-109),  "US-AR": (33,   36.5, -94.6, -89.6),
+    "US-CA": (32.5, 42,   -124.5,-114),  "US-CO": (37,   41,   -109,  -102),
+    "US-CT": (40.9, 42.1, -73.7, -71.8),"US-DE": (38.4, 39.8, -75.8, -75),
+    "US-FL": (24.4, 31,   -87.7, -80),   "US-GA": (30.4, 35,   -85.6, -80.8),
+    "US-HI": (18.9, 22.2, -160.3,-154.8),"US-ID": (42,   49,   -117.2,-111),
+    "US-IL": (36.9, 42.5, -91.5, -87.5),"US-IN": (37.8, 41.8, -88.1, -84.8),
+    "US-IA": (40.4, 43.5, -96.6, -90.1),"US-KS": (37,   40,   -102.1,-94.6),
+    "US-KY": (36.5, 39.2, -89.6, -81.9),"US-LA": (28.9, 33.1, -94.1, -88.8),
+    "US-ME": (43.1, 47.5, -71.1, -66.9),"US-MD": (37.9, 39.7, -79.5, -75),
+    "US-MA": (41.2, 42.9, -73.5, -69.9),"US-MI": (41.7, 48.3, -90.4, -82.4),
+    "US-MN": (43.5, 49.4, -97.2, -89.5),"US-MS": (30,   35,   -91.7, -88.1),
+    "US-MO": (36,   40.6, -95.8, -89.1),"US-MT": (44.4, 49,   -116.1,-104),
+    "US-NE": (40,   43,   -104.1,-95.3),"US-NV": (35,   42,   -120,  -114),
+    "US-NH": (42.7, 45.3, -72.6, -70.7),"US-NJ": (38.9, 41.4, -75.6, -73.9),
+    "US-NM": (31.3, 37,   -109.1,-103),  "US-NY": (40.5, 45.1, -79.8, -71.9),
+    "US-NC": (33.8, 36.6, -84.3, -75.5),"US-ND": (45.9, 49,   -104.1,-96.6),
+    "US-OH": (38.4, 42,   -84.8, -80.5),"US-OK": (33.6, 37,   -103,  -94.4),
+    "US-OR": (41.9, 46.3, -124.6,-116.5),"US-PA": (39.7, 42.3, -80.5, -74.7),
+    "US-RI": (41.1, 42.1, -71.9, -71.1),"US-SC": (32,   35.2, -83.4, -78.5),
+    "US-SD": (42.5, 45.9, -104.1,-96.4),"US-TN": (35,   36.7, -90.3, -81.6),
+    "US-TX": (25.8, 36.5, -106.6,-93.5),"US-UT": (37,   42,   -114.1,-109),
+    "US-VT": (42.7, 45.1, -73.4, -71.5),"US-VA": (36.5, 39.5, -83.7, -75.2),
+    "US-WA": (45.5, 49,   -124.8,-116.9),"US-WV": (37.2, 40.6, -82.7, -77.7),
+    "US-WI": (42.5, 47.1, -92.9, -86.8),"US-WY": (41,   45,   -111.1,-104),
+
+    # 中国各省（south, north, west, east）
+    "CN-11": (39.4, 41.1, 115.4, 117.7),  # 北京
+    "CN-12": (38.6, 40.3, 116.7, 118.1),  # 天津
+    "CN-13": (36,   42.7, 113.5, 119.8),  # 河北
+    "CN-14": (34.6, 40.7, 110.2, 114.6),  # 山西
+    "CN-15": (37.5, 53.3, 97.2,  126.1),  # 内蒙古
+    "CN-21": (38.7, 43.5, 118.8, 125.7),  # 辽宁
+    "CN-22": (41.2, 46,   121.6, 131.3),  # 吉林
+    "CN-23": (43.4, 53.6, 121.1, 135.1),  # 黑龙江
+    "CN-31": (30.7, 31.9, 120.8, 122),    # 上海
+    "CN-32": (30.8, 35.1, 116.4, 121.9),  # 江苏
+    "CN-33": (27.1, 31.2, 118.1, 122.9),  # 浙江
+    "CN-34": (29.4, 34.7, 114.9, 119.9),  # 安徽
+    "CN-35": (23.5, 28.3, 115.8, 120.7),  # 福建
+    "CN-36": (24.5, 30.1, 113.6, 118.5),  # 江西
+    "CN-37": (34.4, 38.3, 114.8, 122.7),  # 山东
+    "CN-41": (31.4, 36.4, 110.4, 116.7),  # 河南
+    "CN-42": (29.1, 33.2, 108.4, 116.1),  # 湖北
+    "CN-43": (24.6, 30.1, 108.8, 114.3),  # 湖南
+    "CN-44": (20.2, 25.5, 109.7, 117.3),  # 广东
+    "CN-45": (20.9, 26.4, 104.5, 112.1),  # 广西
+    "CN-46": (18.1, 20.2, 108.4, 111.2),  # 海南
+    "CN-50": (28.2, 32.2, 105.3, 110.2),  # 重庆
+    "CN-51": (26,   34.3, 97.4,  108.5),  # 四川
+    "CN-52": (24.6, 29.2, 103.6, 109.6),  # 贵州
+    "CN-53": (21.1, 29.3, 97.5,  106.2),  # 云南
+    "CN-54": (26.8, 36.5, 78.4,  99.1),   # 西藏
+    "CN-61": (31.7, 39.6, 105.5, 111.3),  # 陕西
+    "CN-62": (32.6, 42.8, 92.4,  108.7),  # 甘肃
+    "CN-63": (31.6, 39.2, 89.4,  103.1),  # 青海
+    "CN-64": (35.2, 39.4, 104.3, 107.7),  # 宁夏
+    "CN-65": (34.3, 49.2, 73.5,  96.4),   # 新疆
 }
 
 
@@ -389,6 +459,58 @@ class AvonetFilter:
                 class_ids.add(cls_id)
 
         return class_ids, country_code
+
+    def get_species_by_region_ebird(
+        self, region_code: str
+    ) -> Tuple[Set[int], Optional[str]]:
+        """
+        根据州/省代码（如 "AU-QLD", "US-CA", "CN-44"）加载 eBird 离线物种列表。
+        如果州级数据不存在，自动回退到国家级数据。
+
+        Returns:
+            (class_id_set, actual_region_used) 或 (set(), None)
+        """
+        import json
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        offline_dir = os.path.join(module_dir, "data", "offline_ebird_data")
+
+        def _load_ebird_file(code: str) -> Optional[List[str]]:
+            path = os.path.join(offline_dir, f"species_list_{code}.json")
+            if not os.path.exists(path):
+                return None
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                # 支持两种格式：纯 list 或 {"species": [...]}
+                if isinstance(data, list):
+                    return data
+                return data.get("species", [])
+            except Exception as e:
+                print(_t("logs.avonet_read_ebird_failed", code=code, e=e))
+                return None
+
+        region_code = region_code.upper()
+        # 尝试加载州级数据
+        species_codes = _load_ebird_file(region_code)
+        actual_region = region_code
+
+        # 州级无数据则回退到国家级
+        if not species_codes and "-" in region_code:
+            country = region_code.split("-")[0]
+            species_codes = _load_ebird_file(country)
+            actual_region = country if species_codes else None
+
+        if not species_codes:
+            return set(), None
+
+        cls_map = self._load_ebird_cls_map()
+        class_ids: Set[int] = set()
+        for code in species_codes:
+            cls_id = cls_map.get(code)
+            if cls_id is not None:
+                class_ids.add(cls_id)
+
+        return class_ids, actual_region
 
 
 if __name__ == "__main__":

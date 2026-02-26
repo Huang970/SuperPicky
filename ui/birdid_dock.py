@@ -647,24 +647,39 @@ class BirdIDDockWidget(QDockWidget):
         self.region_combo.clear()
         self.region_combo.addItem(self.i18n.t("birdid.region_entire_country"))
 
-        if country_code and country_code != "GLOBAL":
+        # 支持省/州的国家列表
+        _STATE_COUNTRIES = {"AU", "US", "CN"}
+        is_english = self.i18n.current_lang.startswith('en')
+
+        show_region = False
+        if country_code and country_code not in (None, "GLOBAL"):
             # 查找该国家的区域列表
             for country in self.regions_data.get('countries', []):
                 if country.get('code') == country_code:
                     if country.get('has_regions') and country.get('regions'):
                         for region in country['regions']:
-                            region_name = region.get('name', '')
                             region_code = region.get('code', '')
+                            # 中文界面显示中文名，英文界面显示英文名
+                            if is_english:
+                                region_name = region.get('name', region_code)
+                            else:
+                                region_name = region.get('name_cn') or region.get('name', region_code)
                             self.region_combo.addItem(f"{region_name} ({region_code})")
+                        show_region = country_code in _STATE_COUNTRIES
                     break
-        
+
+        # 显示/隐藏省州行
+        if hasattr(self, '_region_row'):
+            self._region_row.setVisible(show_region)
+
         self._updating_regions = False
         # 只有当不是在应用设置时才保存
         if not getattr(self, '_applying_settings', False):
             self._save_settings()
-        
+
         # 如果已有图片，重新识别（应用新的国家/地区过滤）
         self._reidentify_if_needed()
+
 
     def _on_region_changed(self, region_display: str):
         """区域选择变化时保存设置并重新识别"""
@@ -932,21 +947,38 @@ class BirdIDDockWidget(QDockWidget):
         country_row.addWidget(self.country_combo, 1)
         filter_layout.addLayout(country_row)
         
-        # 区域选择行
-        # 区域选择行 (V4.2: 二级区域已移除，隐藏整行)
-        # region_row = QHBoxLayout()
-        # region_label = QLabel(self.i18n.t("birdid.region"))
-        # ... (label styling removed) ...
-        # region_row.addWidget(region_label)
-        
+        # 省/州选择行（仅 AU/US/CN 可见）
+        self._region_row = QWidget()
+        self._region_row.setStyleSheet("background: transparent;")
+        region_row_layout = QHBoxLayout(self._region_row)
+        region_row_layout.setContentsMargins(0, 0, 0, 0)
+        region_row_layout.setSpacing(6)
+        self._region_label = QLabel(self.i18n.t("birdid.region"))
+        self._region_label.setStyleSheet(f"""
+            color: {COLORS['text_tertiary']};
+            font-size: 11px;
+        """)
+        region_row_layout.addWidget(self._region_label)
+
         self.region_combo = QComboBox()
         self.region_combo.addItem(self.i18n.t("birdid.region_entire_country"))
-        self.region_combo.hide() # 隐藏
+        self.region_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {COLORS['bg_input']};
+                border: 1px solid {COLORS['border_subtle']};
+                border-radius: 4px;
+                padding: 4px 8px;
+                color: {COLORS['text_secondary']};
+                font-size: 11px;
+            }}
+            QComboBox:hover {{ border-color: {COLORS['accent']}; }}
+            QComboBox::drop-down {{ border: none; }}
+        """)
         self.region_combo.currentTextChanged.connect(self._on_region_changed)
-        
-        # region_row.addWidget(self.region_combo, 1)
-        # filter_layout.addLayout(region_row)
-        
+        region_row_layout.addWidget(self.region_combo, 1)
+        self._region_row.hide()  # 默认隐藏，选 AU/US/CN 时显示
+        filter_layout.addWidget(self._region_row)
+
         # V4.2: 移除 eBird 过滤开关（默认启用，选择"全球"可禁用）
         # V4.2: 移除自动识别开关（已移到主界面的"识鸟"按钮）
         # 保留隐藏的 checkbox 以兼容设置保存/加载

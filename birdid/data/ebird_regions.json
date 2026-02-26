@@ -66,27 +66,475 @@
       "code": "AU",
       "name": "Australia",
       "name_cn": "澳大利亚",
-      "has_regions": false,
-      "regions_count": 0,
-      "regions": [],
+      "has_regions": true,
+      "regions_count": 8,
+      "regions": [
+        {
+          "code": "AU-ACT",
+          "name": "Australian Capital Territory",
+          "name_cn": "澳首都直辖区"
+        },
+        {
+          "code": "AU-NSW",
+          "name": "New South Wales",
+          "name_cn": "新南威尔士州"
+        },
+        {
+          "code": "AU-NT",
+          "name": "Northern Territory",
+          "name_cn": "北领地"
+        },
+        {
+          "code": "AU-QLD",
+          "name": "Queensland",
+          "name_cn": "昆士兰州"
+        },
+        {
+          "code": "AU-SA",
+          "name": "South Australia",
+          "name_cn": "南澳大利亚州"
+        },
+        {
+          "code": "AU-TAS",
+          "name": "Tasmania",
+          "name_cn": "塔斯马尼亚州"
+        },
+        {
+          "code": "AU-VIC",
+          "name": "Victoria",
+          "name_cn": "维多利亚州"
+        },
+        {
+          "code": "AU-WA",
+          "name": "Western Australia",
+          "name_cn": "西澳大利亚州"
+        }
+      ],
       "species_count": 964
     },
     {
       "code": "US",
       "name": "United States",
       "name_cn": "美国",
-      "has_regions": false,
-      "regions_count": 0,
-      "regions": [],
+      "has_regions": true,
+      "regions_count": 50,
+      "regions": [
+        {
+          "code": "US-AL",
+          "name": "Alabama",
+          "name_cn": "阿拉巴马"
+        },
+        {
+          "code": "US-AK",
+          "name": "Alaska",
+          "name_cn": "阿拉斯加"
+        },
+        {
+          "code": "US-AZ",
+          "name": "Arizona",
+          "name_cn": "亚利桑那"
+        },
+        {
+          "code": "US-AR",
+          "name": "Arkansas",
+          "name_cn": "阿肯色"
+        },
+        {
+          "code": "US-CA",
+          "name": "California",
+          "name_cn": "加利福尼亚"
+        },
+        {
+          "code": "US-CO",
+          "name": "Colorado",
+          "name_cn": "科罗拉多"
+        },
+        {
+          "code": "US-CT",
+          "name": "Connecticut",
+          "name_cn": "康涅狄格"
+        },
+        {
+          "code": "US-DE",
+          "name": "Delaware",
+          "name_cn": "特拉华"
+        },
+        {
+          "code": "US-FL",
+          "name": "Florida",
+          "name_cn": "佛罗里达"
+        },
+        {
+          "code": "US-GA",
+          "name": "Georgia",
+          "name_cn": "乔治亚"
+        },
+        {
+          "code": "US-HI",
+          "name": "Hawaii",
+          "name_cn": "夏威夷"
+        },
+        {
+          "code": "US-ID",
+          "name": "Idaho",
+          "name_cn": "爱达荷"
+        },
+        {
+          "code": "US-IL",
+          "name": "Illinois",
+          "name_cn": "伊利诺伊"
+        },
+        {
+          "code": "US-IN",
+          "name": "Indiana",
+          "name_cn": "印第安纳"
+        },
+        {
+          "code": "US-IA",
+          "name": "Iowa",
+          "name_cn": "艾奥瓦"
+        },
+        {
+          "code": "US-KS",
+          "name": "Kansas",
+          "name_cn": "堪萨斯"
+        },
+        {
+          "code": "US-KY",
+          "name": "Kentucky",
+          "name_cn": "肯塔基"
+        },
+        {
+          "code": "US-LA",
+          "name": "Louisiana",
+          "name_cn": "路易斯安那"
+        },
+        {
+          "code": "US-ME",
+          "name": "Maine",
+          "name_cn": "缅因"
+        },
+        {
+          "code": "US-MD",
+          "name": "Maryland",
+          "name_cn": "马里兰"
+        },
+        {
+          "code": "US-MA",
+          "name": "Massachusetts",
+          "name_cn": "马萨诸塞"
+        },
+        {
+          "code": "US-MI",
+          "name": "Michigan",
+          "name_cn": "密歇根"
+        },
+        {
+          "code": "US-MN",
+          "name": "Minnesota",
+          "name_cn": "明尼苏达"
+        },
+        {
+          "code": "US-MS",
+          "name": "Mississippi",
+          "name_cn": "密西西比"
+        },
+        {
+          "code": "US-MO",
+          "name": "Missouri",
+          "name_cn": "密苏里"
+        },
+        {
+          "code": "US-MT",
+          "name": "Montana",
+          "name_cn": "蒙大拿"
+        },
+        {
+          "code": "US-NE",
+          "name": "Nebraska",
+          "name_cn": "内布拉斯加"
+        },
+        {
+          "code": "US-NV",
+          "name": "Nevada",
+          "name_cn": "内华达"
+        },
+        {
+          "code": "US-NH",
+          "name": "New Hampshire",
+          "name_cn": "新罕布什尔"
+        },
+        {
+          "code": "US-NJ",
+          "name": "New Jersey",
+          "name_cn": "新泽西"
+        },
+        {
+          "code": "US-NM",
+          "name": "New Mexico",
+          "name_cn": "新墨西哥"
+        },
+        {
+          "code": "US-NY",
+          "name": "New York",
+          "name_cn": "纽约"
+        },
+        {
+          "code": "US-NC",
+          "name": "North Carolina",
+          "name_cn": "北卡罗来纳"
+        },
+        {
+          "code": "US-ND",
+          "name": "North Dakota",
+          "name_cn": "北达科他"
+        },
+        {
+          "code": "US-OH",
+          "name": "Ohio",
+          "name_cn": "俄亥俄"
+        },
+        {
+          "code": "US-OK",
+          "name": "Oklahoma",
+          "name_cn": "俄克拉荷马"
+        },
+        {
+          "code": "US-OR",
+          "name": "Oregon",
+          "name_cn": "俄勒冈"
+        },
+        {
+          "code": "US-PA",
+          "name": "Pennsylvania",
+          "name_cn": "宾夕法尼亚"
+        },
+        {
+          "code": "US-RI",
+          "name": "Rhode Island",
+          "name_cn": "罗得岛"
+        },
+        {
+          "code": "US-SC",
+          "name": "South Carolina",
+          "name_cn": "南卡罗来纳"
+        },
+        {
+          "code": "US-SD",
+          "name": "South Dakota",
+          "name_cn": "南达科他"
+        },
+        {
+          "code": "US-TN",
+          "name": "Tennessee",
+          "name_cn": "田纳西"
+        },
+        {
+          "code": "US-TX",
+          "name": "Texas",
+          "name_cn": "德克萨斯"
+        },
+        {
+          "code": "US-UT",
+          "name": "Utah",
+          "name_cn": "犹他"
+        },
+        {
+          "code": "US-VT",
+          "name": "Vermont",
+          "name_cn": "佛蒙特"
+        },
+        {
+          "code": "US-VA",
+          "name": "Virginia",
+          "name_cn": "弗吉尼亚"
+        },
+        {
+          "code": "US-WA",
+          "name": "Washington",
+          "name_cn": "华盛顿"
+        },
+        {
+          "code": "US-WV",
+          "name": "West Virginia",
+          "name_cn": "西弗吉尼亚"
+        },
+        {
+          "code": "US-WI",
+          "name": "Wisconsin",
+          "name_cn": "威斯康星"
+        },
+        {
+          "code": "US-WY",
+          "name": "Wyoming",
+          "name_cn": "怀俄明"
+        }
+      ],
       "species_count": 1747
     },
     {
       "code": "CN",
       "name": "China",
       "name_cn": "中国",
-      "has_regions": false,
-      "regions_count": 0,
-      "regions": [],
+      "has_regions": true,
+      "regions_count": 31,
+      "regions": [
+        {
+          "code": "CN-11",
+          "name": "Beijing",
+          "name_cn": "北京"
+        },
+        {
+          "code": "CN-12",
+          "name": "Tianjin",
+          "name_cn": "天津"
+        },
+        {
+          "code": "CN-13",
+          "name": "Hebei",
+          "name_cn": "河北"
+        },
+        {
+          "code": "CN-14",
+          "name": "Shanxi",
+          "name_cn": "山西"
+        },
+        {
+          "code": "CN-15",
+          "name": "Inner Mongolia",
+          "name_cn": "内蒙古"
+        },
+        {
+          "code": "CN-21",
+          "name": "Liaoning",
+          "name_cn": "辽宁"
+        },
+        {
+          "code": "CN-22",
+          "name": "Jilin",
+          "name_cn": "吉林"
+        },
+        {
+          "code": "CN-23",
+          "name": "Heilongjiang",
+          "name_cn": "黑龙江"
+        },
+        {
+          "code": "CN-31",
+          "name": "Shanghai",
+          "name_cn": "上海"
+        },
+        {
+          "code": "CN-32",
+          "name": "Jiangsu",
+          "name_cn": "江苏"
+        },
+        {
+          "code": "CN-33",
+          "name": "Zhejiang",
+          "name_cn": "浙江"
+        },
+        {
+          "code": "CN-34",
+          "name": "Anhui",
+          "name_cn": "安徽"
+        },
+        {
+          "code": "CN-35",
+          "name": "Fujian",
+          "name_cn": "福建"
+        },
+        {
+          "code": "CN-36",
+          "name": "Jiangxi",
+          "name_cn": "江西"
+        },
+        {
+          "code": "CN-37",
+          "name": "Shandong",
+          "name_cn": "山东"
+        },
+        {
+          "code": "CN-41",
+          "name": "Henan",
+          "name_cn": "河南"
+        },
+        {
+          "code": "CN-42",
+          "name": "Hubei",
+          "name_cn": "湖北"
+        },
+        {
+          "code": "CN-43",
+          "name": "Hunan",
+          "name_cn": "湖南"
+        },
+        {
+          "code": "CN-44",
+          "name": "Guangdong",
+          "name_cn": "广东"
+        },
+        {
+          "code": "CN-45",
+          "name": "Guangxi",
+          "name_cn": "广西"
+        },
+        {
+          "code": "CN-46",
+          "name": "Hainan",
+          "name_cn": "海南"
+        },
+        {
+          "code": "CN-50",
+          "name": "Chongqing",
+          "name_cn": "重庆"
+        },
+        {
+          "code": "CN-51",
+          "name": "Sichuan",
+          "name_cn": "四川"
+        },
+        {
+          "code": "CN-52",
+          "name": "Guizhou",
+          "name_cn": "贵州"
+        },
+        {
+          "code": "CN-53",
+          "name": "Yunnan",
+          "name_cn": "云南"
+        },
+        {
+          "code": "CN-54",
+          "name": "Tibet",
+          "name_cn": "西藏"
+        },
+        {
+          "code": "CN-61",
+          "name": "Shaanxi",
+          "name_cn": "陕西"
+        },
+        {
+          "code": "CN-62",
+          "name": "Gansu",
+          "name_cn": "甘肃"
+        },
+        {
+          "code": "CN-63",
+          "name": "Qinghai",
+          "name_cn": "青海"
+        },
+        {
+          "code": "CN-64",
+          "name": "Ningxia",
+          "name_cn": "宁夏"
+        },
+        {
+          "code": "CN-65",
+          "name": "Xinjiang",
+          "name_cn": "新疆"
+        }
+      ],
       "species_count": 1427
     },
     {

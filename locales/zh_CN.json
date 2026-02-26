@@ -995,6 +995,7 @@
     "meta_aesthetic": "美学分",
     "meta_flying": "飞行",
     "meta_species": "鸟种",
+    "meta_caption": "选片备注",
     "meta_camera": "相机",
     "meta_lens": "镜头",
     "meta_shutter": "快门",
@@ -1042,6 +1043,13 @@
     "ctx_add_external_app": "在设置中添加外部应用…",
     "ctx_copy_path": "复制文件路径",
     "copy_exif": "复制 EXIF 信息",
-    "copy_exif_done": "已复制 ✓"
+    "copy_exif_done": "已复制 ✓",
+    "delete_title": "删除图片",
+    "delete_msg": "将 {filename} 移入回收站？\n\n❗ 此操作会同时从数据库删除记录，恢复文件后需重新处理。",
+    "delete_no_ask": "以后不再询问",
+    "delete_confirm_btn": "删除",
+    "delete_cancel_btn": "取消",
+    "delete_failed": "删除失败",
+    "delete_failed_msg": "无法将文件移入回收站：\n{error}"
   }
 }

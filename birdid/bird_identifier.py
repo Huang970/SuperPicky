@@ -842,12 +842,22 @@ def identify_bird(
                             if species_class_ids:
                                 print(f"[Avonet] GPS ({lat:.2f}, {lon:.2f}): {len(species_class_ids)} species")
 
-                    # 回退到区域代码
+                    # 回退到区域代码（优先 eBird 离线物种列表，其次 Avonet 边界）
                     if species_class_ids is None and (region_code or country_code):
                         effective_region = region_code or country_code
-                        species_class_ids = species_filter.get_species_by_region(effective_region)
-                        if species_class_ids:
-                            print(f"[Avonet] Region {effective_region}: {len(species_class_ids)} species")
+                        # 优先使用 eBird 离线物种 JSON（精确到州/省）
+                        try:
+                            ebird_ids, actual_region = species_filter.get_species_by_region_ebird(effective_region)
+                            if ebird_ids:
+                                species_class_ids = ebird_ids
+                                print(f"[eBird] Region {effective_region}: {len(species_class_ids)} species (offline JSON)")
+                        except Exception as _e:
+                            print(f"[eBird] State filter failed: {_e}")
+                        # 如果 eBird 数据不可用，回退到 Avonet 边界框查询
+                        if not species_class_ids:
+                            species_class_ids = species_filter.get_species_by_region(effective_region)
+                            if species_class_ids:
+                                print(f"[Avonet] Region {effective_region}: {len(species_class_ids)} species (bounds)")
 
                     # 记录过滤信息
                     if species_class_ids:
