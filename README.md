@@ -82,10 +82,10 @@ Automatically set thresholds based on your experience:
 - [Quark](https://pan.quark.cn/s/d15276717367)
 
 **CPU Version (v4.1.0 Beta)**
-- [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_4.1.0_Win64_CPU.zip)
-- [Baidu Netdisk](https://pan.baidu.com/s/1krjIG3rsSbUUI4PeVUh2Iw?pwd=kd45) Code: kd45
+- [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0Win64_CPU-SP2.zip)
+- [Baidu Netdisk](https://pan.baidu.com/s/155DpFtRyiYA7Hz6HnagifA?pwd=kk2n) Code: kk2n
 - [Google Drive (Mirror)](https://drive.google.com/file/d/1dYzW47KuHEH-hnkHZOnpfZwJNSsl7IkB/view?usp=sharing)
-- [Quark](https://pan.quark.cn/s/462025bd8b3a)
+- [Quark](https://pan.quark.cn/s/400ccf6a3e12)
 
 
 ---
