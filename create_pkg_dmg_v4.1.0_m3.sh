@@ -1,10 +1,9 @@
 #!/bin/bash
-# SuperPicky V4.1.0 - PKG + DMG 完整打包脚本 (M3 Mac / Apple Silicon 版本)
+# SuperPicky - PKG + DMG 完整打包脚本
 # 包含: PyInstaller打包 → PKG组件 → Distribution PKG → DMG → 签名公证
-# 特色: 自动安装 Lightroom 插件
+# 特色: 自动安装 Lightroom 插件，文件名含架构和 commit hash
 # 作者: James Zhen Yu
-# 日期: 2026-02-23
-# 平台: Apple Silicon (M1/M2/M3/M4)
+# 平台: Apple Silicon (arm64) / Intel (x86_64)
 
 set -e  # 遇到错误立即退出
 
@@ -21,8 +20,20 @@ APPLE_ID="james@jamesphotography.com.au"
 TEAM_ID="JWR6FDB52H"
 APP_PASSWORD=$(security find-generic-password -a "${APPLE_ID}" -s "SuperPicky-Notarize" -w)
 
-PKG_NAME="${APP_NAME}_v${VERSION}_Installer.pkg"
-DMG_NAME="${APP_NAME}_v${VERSION}.dmg"
+# 检测 CPU 架构
+ARCH=$(uname -m)
+if [ "${ARCH}" = "arm64" ]; then
+    ARCH_TAG="arm64"
+else
+    ARCH_TAG="intel"
+fi
+
+# 获取 Git Commit Hash（短版本，7位）
+COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+# 文件名格式: SuperPicky_v4.1.0_arm64_f20f9b5.dmg
+PKG_NAME="${APP_NAME}_v${VERSION}_${ARCH_TAG}_${COMMIT_HASH}_Installer.pkg"
+DMG_NAME="${APP_NAME}_v${VERSION}_${ARCH_TAG}_${COMMIT_HASH}.dmg"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -60,8 +71,7 @@ log_step "步骤 2/8: PyInstaller 打包应用"
 log_info "激活 .venv 虚拟环境..."
 source .venv/bin/activate
 
-# 注入 Git Commit Hash
-COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+# 注入 Git Commit Hash 到 build_info.py（COMMIT_HASH 已在顶部配置区获取）
 BUILD_INFO_FILE="core/build_info.py"
 BUILD_INFO_BACKUP="${BUILD_INFO_FILE}.backup"
 cp "${BUILD_INFO_FILE}" "${BUILD_INFO_BACKUP}"
