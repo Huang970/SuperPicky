@@ -1080,6 +1080,14 @@ class PhotoProcessor:
                             'bird_species_en': en_name,
                             'birdid_confidence': birdid_confidence,
                         })
+                        # 将鸟名追加到已生成的 DB caption 最前面
+                        existing = self.report_db.get_photo(file_prefix) or {}
+                        old_cap = existing.get('caption') or ''
+                        bird_line = f"鸟种：{cn_name or en_name}"
+                        if old_cap and not old_cap.startswith('鸟种：') and not old_cap.startswith('备选鸟种'):
+                            self.report_db.update_photo(file_prefix, {'caption': bird_line + '\n' + old_cap})
+                        elif not old_cap:
+                            self.report_db.update_photo(file_prefix, {'caption': bird_line})
                     except Exception as _e:
                         self._log(f"  ⚠️ Bird species DB write failed [{file_prefix}]: {_e}", "warning")
 
@@ -1102,7 +1110,7 @@ class PhotoProcessor:
                         'low_confidence': True,
                         'confidence': birdid_confidence,
                     }
-                    # EXIF 标题写成 "鸟名？(62%)"
+                    # EXIF 标题写成 "鸟名\uff1f(62%)"
                     low_title = f"{cn_name}\uff1f({birdid_confidence:.0f}%)"
                     for target_file in title_targets:
                         if target_file and os.path.exists(target_file):
@@ -1110,6 +1118,18 @@ class PhotoProcessor:
                                 'file': target_file,
                                 'title': low_title,
                             })
+                    # 将候选鸟名追加到已生成的 DB caption 最前面
+                    if self.report_db:
+                        try:
+                            existing = self.report_db.get_photo(file_prefix) or {}
+                            old_cap = existing.get('caption') or ''
+                            bird_line = f"\u5907\u9009\u9e1f\u79cd\uff1a{cn_name}\uff1f\uff08\u628a\u63e1\u5ea6 {birdid_confidence:.0f}%\uff09"
+                            if old_cap and not old_cap.startswith('\u5907\u9009\u9e1f\u79cd'):
+                                self.report_db.update_photo(file_prefix, {'caption': bird_line + '\n' + old_cap})
+                            elif not old_cap:
+                                self.report_db.update_photo(file_prefix, {'caption': bird_line})
+                        except Exception as _e:
+                            self._log(f"  \u26a0\ufe0f Low conf caption update failed [{file_prefix}]: {_e}", "warning")
 
         def collect_birdid_tasks(wait: bool = False):
             """Collect completed BirdID tasks.
@@ -1954,16 +1974,6 @@ class PhotoProcessor:
             
             caption_lines = []
             caption_lines.append(self.i18n.t("logs.caption_final", rating=rating_value, reason=reason))
-            # 鸟种信息（确定或候选）
-            _bird = self.file_bird_species.get(original_prefix, {})
-            if _bird:
-                _bname = _bird.get('cn_name') or _bird.get('en_name', '')
-                if _bird.get('low_confidence'):
-                    caption_lines.append(
-                        f"\u5099选鸟种：{_bname}\uff1f（把握度 {_bird.get('confidence', 0):.0f}%）"
-                    )
-                elif _bname:
-                    caption_lines.append(f"\u9e1f种：{_bname}")
             sharpness_str = f"{head_sharpness:.2f}" if head_sharpness else "N/A"
             topiq_str = f"{topiq:.2f}" if topiq else "N/A"
             caption_lines.append(self.i18n.t("logs.caption_data", conf=confidence, sharp=sharpness_str, nima=topiq_str, vis=best_eye_visibility))
