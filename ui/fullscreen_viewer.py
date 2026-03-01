@@ -159,7 +159,10 @@ class _FullscreenImageLabel(QLabel):
     - 滚轮（任意模式）→ 以鼠标为中心缩放 10%~500%
     - 触控板双指捐合 → 缩放（macOS NativeGesture）
     - toggle_focus()  → 切换焦点叠加显示/隐藏
+    - 右键 → 发出 right_clicked 信号（带全局坐标）
     """
+
+    right_clicked = Signal(object)  # QPoint（全局坐标）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -486,6 +489,9 @@ class _FullscreenImageLabel(QLabel):
             self._zoom_hint.move(x, max(0, y))
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.RightButton:
+            self.right_clicked.emit(event.globalPosition().toPoint())
+            return
         if event.button() == Qt.LeftButton:
             pos = event.position()
             self._drag_start_x = pos.x()
@@ -690,6 +696,7 @@ class FullscreenViewer(QWidget):
     prev_requested = Signal()
     next_requested = Signal()
     delete_requested = Signal(dict)   # 功能1：携带当前 photo dict
+    context_menu_requested = Signal(dict, object)   # (photo, QPoint全局坐标)
 
     def __init__(self, i18n, parent=None):
         super().__init__(parent)
@@ -724,6 +731,7 @@ class FullscreenViewer(QWidget):
 
         # --- 图片区域（stretch=1）---
         self._img_label = _FullscreenImageLabel()
+        self._img_label.right_clicked.connect(self._on_img_right_clicked)
         layout.addWidget(self._img_label, 1)
 
         # --- 底部导航栏 44px ---
@@ -868,6 +876,11 @@ class FullscreenViewer(QWidget):
 
     def _on_focus_btn_clicked(self):
         self.toggle_focus()
+
+    def _on_img_right_clicked(self, global_pos):
+        """大图右键 → 冒泡右键菜单信号给父组件。"""
+        if self._current_photo:
+            self.context_menu_requested.emit(self._current_photo, global_pos)
 
     # 功能2：锁定缩放
     def _toggle_zoom_lock(self):

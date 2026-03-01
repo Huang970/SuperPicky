@@ -349,6 +349,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._fullscreen.prev_requested.connect(self._fullscreen_prev)
         self._fullscreen.next_requested.connect(self._fullscreen_next)
         self._fullscreen.delete_requested.connect(self._on_delete_photo)
+        self._fullscreen.context_menu_requested.connect(self._on_fullscreen_context_menu)
         self._stack.addWidget(self._fullscreen)   # index 1
 
         # Page 2: 对比查看器（C5）
@@ -559,12 +560,16 @@ class ResultsBrowserWindow(QMainWindow):
         photo = self._thumb_grid.select_prev()
         if photo:
             self._detail_panel.show_photo(photo)
+            if self._stack.currentIndex() == 1:   # 全屏模式同步大图
+                self._fullscreen.show_photo(photo)
 
     @Slot()
     def _next_photo(self):
         photo = self._thumb_grid.select_next()
         if photo:
             self._detail_panel.show_photo(photo)
+            if self._stack.currentIndex() == 1:   # 全屏模式同步大图
+                self._fullscreen.show_photo(photo)
 
     @Slot(dict)
     def _enter_fullscreen(self, photo: dict):
@@ -624,6 +629,11 @@ class ResultsBrowserWindow(QMainWindow):
     def _show_context_menu(self, photo: dict, pos):
         """C4：右键菜单（由 ThumbnailGrid 通过 parent chain 调用）。"""
         _show_context_menu_impl(self, photo, pos, self._directory)
+
+    @Slot(dict, object)
+    def _on_fullscreen_context_menu(self, photo: dict, global_pos):
+        """全屏大图右键菜单。"""
+        _show_context_menu_impl(self, photo, global_pos, self._directory)
 
     @Slot(dict)
     def _on_delete_photo(self, photo: dict):
@@ -864,6 +874,7 @@ class ResultsBrowserWidget(QWidget):
         self._fullscreen.prev_requested.connect(self._fullscreen_prev)
         self._fullscreen.next_requested.connect(self._fullscreen_next)
         self._fullscreen.delete_requested.connect(self._on_delete_photo)
+        self._fullscreen.context_menu_requested.connect(self._on_fullscreen_context_menu)
         self._stack.addWidget(self._fullscreen)
 
         # Page 2: 对比查看器（C5）
@@ -1117,12 +1128,16 @@ class ResultsBrowserWidget(QWidget):
         photo = self._thumb_grid.select_prev()
         if photo:
             self._detail_panel.show_photo(photo)
+            if self._stack.currentIndex() == 1:   # 全屏模式同步大图
+                self._fullscreen.show_photo(photo)
 
     @Slot()
     def _next_photo(self):
         photo = self._thumb_grid.select_next()
         if photo:
             self._detail_panel.show_photo(photo)
+            if self._stack.currentIndex() == 1:   # 全屏模式同步大图
+                self._fullscreen.show_photo(photo)
 
     @Slot(dict)
     def _enter_fullscreen(self, photo: dict):
@@ -1191,6 +1206,11 @@ class ResultsBrowserWidget(QWidget):
             return
 
         # 1. 确认弹窗
+    @Slot(dict, object)
+    def _on_fullscreen_context_menu(self, photo: dict, global_pos):
+        """全屏大图右键菜单。"""
+        _show_context_menu_impl(self, photo, global_pos, self._directory)
+
         if cfg.delete_confirm:
             from PySide6.QtWidgets import QCheckBox
             msg_box = QMessageBox(self)
