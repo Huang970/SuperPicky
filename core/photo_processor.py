@@ -2546,6 +2546,10 @@ class PhotoProcessor:
                 for file_info in files_to_move:
                     # 原文件名（带后缀）
                     orig_filename = file_info['filename']
+                    # XMP 侧车文件与 RAW 共用同一个 prefix，跳过 XMP 的 current_path 更新
+                    # 否则 XMP 会覆盖 RAW 已写入的正确路径，导致连拍合并时定位不到原图
+                    if orig_filename.lower().endswith('.xmp'):
+                        continue
                     # 文件前缀（不带后缀，也是数据库的主键/索引）
                     file_prefix = os.path.splitext(orig_filename)[0]
                     # 新的相对路径
