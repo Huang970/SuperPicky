@@ -43,9 +43,9 @@ jobs:
         .\build_release_cpu.bat
 
     - name: Create installer with Inno Setup
-      uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+      uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
       with:
-        path: output/SuperPicky_Win64_CPU/SuperPicky.iss
+        path: ./output/SuperPicky_Win64_CPU/SuperPicky.iss
 
     - name: Prepare release assets
       run: |
