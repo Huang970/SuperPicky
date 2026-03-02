@@ -59,10 +59,10 @@
 
 ### macOS
 **Apple Silicon (M1/M2/M3/M4) (v4.1.0 LTS)**
-- [GitHub 下载](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_arm64_7e00be36.dmg) | [Google Drive](https://drive.google.com/file/d/1wu5ciNc9TwVz3Xu5d00kOTWBE3tkITrf/view?usp=sharing) | [百度网盘](https://pan.baidu.com/s/13zH9ms-2TeWDku-CAGWUPw?pwd=38b9) 提取码: 38b9 | [夸克网盘](https://pan.quark.cn/s/625a2dac438a)
+- [GitHub 下载](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_arm64_8e61afbd.dmg) | [Google Drive](https://drive.google.com/file/d/1dVjJxAJahvxbsgp5z7QX-zgEyz7Q-boB/view?usp=sharing) | [百度网盘](https://pan.baidu.com/s/1QSV7hkvuC65FTEUyF89z6Q?pwd=5t7s) 提取码: 5t7s | [夸克网盘](https://pan.quark.cn/s/625a2dac438a)
 
 **Intel (2020年前 Mac) (v4.1.0 LTS)**
-- [GitHub 下载](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_Intel_7e00be063.dmg) | [Google Drive](https://drive.google.com/file/d/1SBb_A3qqEgMJCSbUduIXtjnbjv2I5iRn/view?usp=sharing) | [百度网盘](https://pan.baidu.com/s/1Wz-QTwLrV8wlBvW6CeQHNA?pwd=62dr) 提取码: 62dr | [夸克网盘](https://pan.quark.cn/s/1b5d87b74059)
+- [GitHub 下载](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_Intel_8e61afb.dmg) | [Google Drive](https://drive.google.com/file/d/1rSdEcbZcpxtqhF8k064Av5vFXowCpVTz/view?usp=sharing) | [百度网盘](https://pan.baidu.com/s/1WUsxHypexvaBwOGzkRhxoA?pwd=c3m9) 提取码: c3m9 | [夸克网盘](https://pan.quark.cn/s/1b5d87b74059)
 
 1. 下载对应版本的 DMG 文件
 2. 双击 DMG 文件，将应用拖入 Applications

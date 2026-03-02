@@ -64,15 +64,15 @@ Automatically set thresholds based on your experience:
 
 ### macOS
 **Apple Silicon (M1/M2/M3/M4) (v4.1.0 LTS)**
-- [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_arm64_7e00be36.dmg)
-- [Google Drive (Mirror)](https://drive.google.com/file/d/1wu5ciNc9TwVz3Xu5d00kOTWBE3tkITrf/view?usp=sharing)
-- [Baidu Netdisk](https://pan.baidu.com/s/13zH9ms-2TeWDku-CAGWUPw?pwd=38b9) Code: 38b9
+- [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_arm64_8e61afbd.dmg)
+- [Google Drive (Mirror)](https://drive.google.com/file/d/1dVjJxAJahvxbsgp5z7QX-zgEyz7Q-boB/view?usp=sharing)
+- [Baidu Netdisk](https://pan.baidu.com/s/1QSV7hkvuC65FTEUyF89z6Q?pwd=5t7s) Code: 5t7s
 - [Quark](https://pan.quark.cn/s/625a2dac438a)
 
 **Intel (Pre-2020 Mac) (v4.1.0 LTS)**
-- [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_Intel_7e00be063.dmg)
-- [Google Drive (Mirror)](https://drive.google.com/file/d/1SBb_A3qqEgMJCSbUduIXtjnbjv2I5iRn/view?usp=sharing)
-- [Baidu Netdisk](https://pan.baidu.com/s/1Wz-QTwLrV8wlBvW6CeQHNA?pwd=62dr) Code: 62dr
+- [GitHub Download](https://github.com/jamesphotography/SuperPicky/releases/download/v4.1.0/SuperPicky_v4.1.0_Intel_8e61afb.dmg)
+- [Google Drive (Mirror)](https://drive.google.com/file/d/1rSdEcbZcpxtqhF8k064Av5vFXowCpVTz/view?usp=sharing)
+- [Baidu Netdisk](https://pan.baidu.com/s/1WUsxHypexvaBwOGzkRhxoA?pwd=c3m9) Code: c3m9
 - [Quark](https://pan.quark.cn/s/1b5d87b74059)
 
 ### Windows
