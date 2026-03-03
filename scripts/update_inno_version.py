@@ -79,34 +79,49 @@ def update_inno_version():
     new_version = f"{app_version}-{commit_hash}"
     print(f"Updating version to: {new_version}")
     
-    # Locate inno file
-    inno_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        'inno', 'SuperPicky.iss'
-    )
+    # Locate inno files
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    inno_paths = [
+        os.path.join(base_dir, 'inno', 'SuperPicky.iss'),
+        os.path.join(base_dir, 'output', 'SuperPicky_Win64_CPU', 'SuperPicky.iss')
+    ]
     
-    try:
-        # Read file content
-        with open(inno_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Replace AppVersion
-        import re
-        updated_content = re.sub(
-            r'AppVersion=.+',
-            f'AppVersion={new_version}',
-            content
-        )
-        
-        # Write back to file
-        with open(inno_path, 'w', encoding='utf-8') as f:
-            f.write(updated_content)
-        
-        print(f"Successfully updated {inno_path}")
-        return True
-    except Exception as e:
-        print(f"Error updating inno file: {e}")
-        return False
+    success = True
+    for inno_path in inno_paths:
+        if not os.path.exists(inno_path):
+            print(f"Skipping {inno_path} - file not found")
+            continue
+            
+        try:
+            # Read file content
+            with open(inno_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Replace AppVersion
+            import re
+            updated_content = re.sub(
+                r'AppVersion=.+',
+                f'AppVersion={new_version}',
+                content
+            )
+            
+            # Replace OutputBaseFilename
+            updated_content = re.sub(
+                r'OutputBaseFilename=SuperPicky_Setup_Win64',
+                f'OutputBaseFilename=SuperPicky_Setup_Win64_{app_version}_{commit_hash}',
+                updated_content
+            )
+            
+            # Write back to file
+            with open(inno_path, 'w', encoding='utf-8') as f:
+                f.write(updated_content)
+            
+            print(f"Successfully updated {inno_path}")
+        except Exception as e:
+            print(f"Error updating {inno_path}: {e}")
+            success = False
+    
+    return success
 
 
 if __name__ == "__main__":
