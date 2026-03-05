@@ -896,6 +896,8 @@
     "stats_complete": "Analysis Complete  |  {total} photos  |  {time_min:.1f} min",
     "stats_flying": "🔵 Flying: {count}",
     "stats_focus_precise": "🟢 Precise Focus: {count}",
+    "btn_screenshot": "Screenshot",
+    "screenshot_hint": "Take a screenshot to identify...",
     "stats_species": "🦜 {count} species: {names}"
   },
   "cli": {
