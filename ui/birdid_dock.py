@@ -436,10 +436,9 @@ class BirdIDDockWidget(QDockWidget):
         """)
         self.tab_search.clicked.connect(lambda: self._switch_tab(1))
         
-        # 检查系统语言，仅在简体中文系统显示查询鸟名标签
-        import locale
-        system_lang = locale.getdefaultlocale()[0]
-        if system_lang and system_lang.startswith('zh_CN'):
+        # 检查应用语言，仅在简体中文界面显示查询鸟名标签
+        # 使用 i18n 系统而非 locale（macOS 的 locale 可能返回 'C'，不可靠）
+        if self.i18n.current_lang.startswith('zh'):
             tabs_layout.addWidget(self.tab_search)
         else:
             self.tab_search.hide()
