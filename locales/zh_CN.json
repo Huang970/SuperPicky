@@ -869,6 +869,8 @@
     "error_prefix": "错误: ",
     "stats_complete": "分析完成  |  {total} 张  |  {time_min:.1f} min",
     "stats_flying": "🔵 飞版: {count}",
+    "btn_screenshot": "截图识别",
+    "screenshot_hint": "请截图，完成后自动识别...",
     "stats_focus_precise": "🟢 精焦: {count}",
     "stats_species": "🦜 {count} 种: {names}"
   },
