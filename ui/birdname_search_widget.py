@@ -26,11 +26,20 @@ from tools.i18n import get_i18n
 def get_birdname_db_path() -> str:
     """获取鸟类名称数据库路径"""
     if getattr(sys, 'frozen', False):
-        # PyInstaller 将 datas 放在 _MEIPASS (_internal/)，不是 executable 同级
-        base_dir = sys._MEIPASS
+        # macOS .app bundle struct: executable is in Contents/MacOS/
+        # PyInstaller puts datas in Contents/Resources/
+        if sys.platform == 'darwin':
+            app_contents = os.path.dirname(os.path.dirname(sys.executable))
+            res_dir = os.path.join(app_contents, 'Resources')
+            path_in_res = os.path.join(res_dir, 'ioc', 'birdname.db')
+            if os.path.exists(path_in_res):
+                return path_in_res
+        
+        # Windows 或 one-dir / one-file 模式的回退
+        return os.path.join(sys._MEIPASS, 'ioc', 'birdname.db')
     else:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_dir, 'ioc', 'birdname.db')
+        return os.path.join(base_dir, 'ioc', 'birdname.db')
 
 
 def get_birdname_ini_path() -> str:
