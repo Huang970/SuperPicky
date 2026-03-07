@@ -28,8 +28,6 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QPropertyAnimation, QEasingCurve, QMimeData, QThread
 from PySide6.QtGui import QFont, QPixmap, QIcon, QAction, QTextCursor, QColor, QDragEnterEvent, QDropEvent
-from PySide6.QtWidgets import QCompleter
-from PySide6.QtCore import QStringListModel
 
 from tools.i18n import get_i18n
 from advanced_config import get_advanced_config
@@ -45,17 +43,11 @@ from ui.skill_level_dialog import SkillLevelDialog, SKILL_PRESETS, get_skill_lev
 class DropLineEdit(QLineEdit):
     """支持拖放目录的 QLineEdit"""
     pathDropped = Signal(str)  # 拖放目录后发射此信号
-    focusGained = Signal()     # 聚焦时发射，供主窗口刷新 QCompleter 数据
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-    
-    def focusInEvent(self, event):
-        """聚焦时发射信号，让主窗口更新 completer 列表"""
-        super().focusInEvent(event)
-        self.focusGained.emit()
-    
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         """验证拖入的内容"""
         if event.mimeData().hasUrls():
@@ -66,7 +58,7 @@ class DropLineEdit(QLineEdit):
                     event.acceptProposedAction()
                     return
         event.ignore()
-    
+
     def dropEvent(self, event: QDropEvent):
         """处理拖放"""
         urls = event.mimeData().urls()
@@ -1092,7 +1084,6 @@ class SuperPickyMainWindow(QMainWindow):
 
     def _create_directory_section(self, parent_layout):
         """创建目录选择区域"""
-        # 输入区域
         dir_layout = QHBoxLayout()
         dir_layout.setSpacing(8)
 
@@ -1102,7 +1093,6 @@ class SuperPickyMainWindow(QMainWindow):
         self.dir_input.returnPressed.connect(self._on_path_entered)
         self.dir_input.editingFinished.connect(self._on_path_entered)  # V3.9: 失焦时也验证
         self.dir_input.pathDropped.connect(self._on_path_dropped)     # V3.9: 拖放目录
-        self.dir_input.focusGained.connect(self._update_dir_completer) # 最近目录弹出
         dir_layout.addWidget(self.dir_input, 1)
 
         browse_btn = QPushButton(self.i18n.t("labels.browse"))
@@ -1112,14 +1102,6 @@ class SuperPickyMainWindow(QMainWindow):
         dir_layout.addWidget(browse_btn)
 
         parent_layout.addLayout(dir_layout)
-
-        # QCompleter：聚焦时弹出最近可用目录（最多 3 条）
-        self._dir_completer_model = QStringListModel(self)
-        self._dir_completer = QCompleter(self._dir_completer_model, self)
-        self._dir_completer.setCompletionMode(QCompleter.UnfilteredPopupCompletion)
-        self._dir_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self._dir_completer.activated.connect(self._handle_directory_selection)
-        self.dir_input.setCompleter(self._dir_completer)
 
     def _create_parameters_section(self, parent_layout):
         """创建参数设置区域"""
@@ -1457,13 +1439,6 @@ class SuperPickyMainWindow(QMainWindow):
         """V3.9: 处理拖放的目录"""
         if directory and os.path.isdir(directory):
             self._handle_directory_selection(directory)
-
-    def _update_dir_completer(self):
-        """地址栏聚焦时，用最近 3 个可用目录更新 QCompleter。"""
-        available = self.config.get_available_recent_directories(n=3)
-        self._dir_completer_model.setStringList(available)
-        if available:
-            self._dir_completer.complete()
 
     def _handle_directory_selection(self, directory):
         """处理目录选择"""
