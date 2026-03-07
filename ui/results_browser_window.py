@@ -699,7 +699,7 @@ class ResultsBrowserWindow(QMainWindow):
 
     @Slot(str, int)
     def _on_rating_changed(self, filename: str, new_rating: int):
-        """详情面板评分修改：写入 DB + 刷新缩略图角标。"""
+        """详情面板评分修改：写入 DB + 刷新缩略图角标 + 异步写 EXIF。"""
         if self._db:
             self._db.update_photo(filename, {"rating": new_rating})
         for p in self._filtered_photos:
@@ -707,6 +707,24 @@ class ResultsBrowserWindow(QMainWindow):
                 p["rating"] = new_rating
                 break
         self._thumb_grid.refresh_photo(filename, new_rating)
+        # 异步写 EXIF（遵守 metadata_write_mode 设置，mode=none 时内部自动跳过）
+        file_path = self._get_photo_file_path(filename)
+        if file_path:
+            import threading
+            from tools.exiftool_manager import get_exiftool_manager
+            threading.Thread(
+                target=get_exiftool_manager().set_rating_and_pick,
+                args=(file_path, new_rating),
+                daemon=True,
+            ).start()
+
+    def _get_photo_file_path(self, filename: str) -> "str | None":
+        """根据 filename 查找照片的绝对文件路径（优先 current_path，其次 original_path）。"""
+        for p in self._filtered_photos:
+            if p.get("filename") == filename:
+                path = p.get("current_path") or p.get("original_path") or ""
+                return path if path and os.path.exists(path) else None
+        return None
 
     @Slot(list)
     def _on_multi_selection_changed(self, photos: list):
@@ -1365,7 +1383,7 @@ class ResultsBrowserWidget(QWidget):
 
     @Slot(str, int)
     def _on_rating_changed(self, filename: str, new_rating: int):
-        """详情面板评分修改：写入 DB + 刷新缩略图角标。"""
+        """详情面板评分修改：写入 DB + 刷新缩略图角标 + 异步写 EXIF。"""
         if self._db:
             self._db.update_photo(filename, {"rating": new_rating})
         for p in self._filtered_photos:
@@ -1373,6 +1391,25 @@ class ResultsBrowserWidget(QWidget):
                 p["rating"] = new_rating
                 break
         self._thumb_grid.refresh_photo(filename, new_rating)
+        # 异步写 EXIF（遵守 metadata_write_mode 设置，mode=none 时内部自动跳过）
+        file_path = self._get_photo_file_path(filename)
+        print(f"[EXIF DEBUG][Widget] filename={filename}, file_path={file_path}, rating={new_rating}")
+        if file_path:
+            import threading
+            from tools.exiftool_manager import get_exiftool_manager
+            threading.Thread(
+                target=get_exiftool_manager().set_rating_and_pick,
+                args=(file_path, new_rating),
+                daemon=True,
+            ).start()
+
+    def _get_photo_file_path(self, filename: str) -> "str | None":
+        """根据 filename 查找照片的绝对文件路径（优先 current_path，其次 original_path）。"""
+        for p in self._filtered_photos:
+            if p.get("filename") == filename:
+                path = p.get("current_path") or p.get("original_path") or ""
+                return path if path and os.path.exists(path) else None
+        return None
 
     @Slot(list)
     def _on_multi_selection_changed(self, photos: list):
