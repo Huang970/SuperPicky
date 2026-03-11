@@ -12,36 +12,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Define the models and their destination directories relative to the project root
 MODELS_TO_DOWNLOAD = [
-    # === PyTorch Models (legacy) ===
-    {
-        "category": "Classification (PyTorch)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "model20240824.pth",
-        "dest_dir": "models",
-    },
-    {
-        "category": "Flight Detection (PyTorch)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "superFlier_efficientnet.pth",
-        "dest_dir": "models",
-    },
-    {
-        "category": "Keypoint Detection (PyTorch)",
-        "repo_id": "jamesphotography/SuperPicky-models",
-        "filename": "cub200_keypoint_resnet50_slim.pth",
-        "dest_dir": "models",
-    },
     {
         "category": "Database",
         "repo_id": "jamesphotography/SuperPicky-models",
         "filename": "avonet.db",
         "dest_dir": "birdid/data",
-    },
-    {
-        "category": "Quality Assessment (PyTorch)",
-        "repo_id": "chaofengc/IQA-PyTorch-Weights",
-        "filename": "cfanet_iaa_ava_res50-3cd62bb3.pth",
-        "dest_dir": "models",
     },
     # === ONNX Models ===
     {
