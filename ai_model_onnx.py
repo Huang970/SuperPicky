@@ -382,7 +382,7 @@ def load_yolo_model(log_callback=None):
         elif provider == "CoreMLExecutionProvider":
             msg = i18n.t("ai.using_mps")
         else:
-            msg = i18n.t("ai.using_cpu")
+            msg = i18n.t("ai.using_cpu_onnx")
 
         if log_callback:
             log_callback(msg, "info")

@@ -1015,7 +1015,7 @@ class PhotoProcessor:
         identify_bird_fn = None
         if self.settings.auto_identify:
             try:
-                from birdid.bird_identifier import identify_bird as identify_bird_fn
+                from birdid.bird_identifier_onnx import identify_bird as identify_bird_fn
             except Exception as e:
                 identify_bird_fn = None
                 self._log(f"  ⚠️ BirdID import failed: {e}", "warning")
@@ -1160,13 +1160,8 @@ class PhotoProcessor:
                     self._log(f"  ⚠️ Bird ID failed [{source_filename or file_prefix}]: {e}", "warning")
         
         # 轻量 Job 调度：在 MPS 上默认关闭 YOLO 预取，避免与 TOPIQ 并发争用
-        # 如需强制开启/关闭，可通过 SUPERPICKY_YOLO_PREFETCH 覆盖。
+        # ONNX 分支: 强制 mps_available 为 False
         mps_available = False
-        try:
-            import torch
-            mps_available = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
-        except Exception:
-            mps_available = False
         
         env_yolo_prefetch_raw = os.getenv("SUPERPICKY_YOLO_PREFETCH", "").strip().lower()
         if env_yolo_prefetch_raw:
