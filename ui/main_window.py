@@ -1106,6 +1106,7 @@ class SuperPickyMainWindow(QMainWindow):
 
         # V3.9: 使用支持拖放的 DropLineEdit
         self.dir_input = DropLineEdit()
+        self.dir_input.clear()  # 防止 macOS 窗口状态恢复保留残留内容导致启动时误触发验证
         self.dir_input.setPlaceholderText(self.i18n.t("labels.dir_placeholder"))
         self.dir_input.returnPressed.connect(self._on_path_entered)
         self.dir_input.editingFinished.connect(self._on_path_entered)  # V3.9: 失焦时也验证
@@ -1438,6 +1439,8 @@ class SuperPickyMainWindow(QMainWindow):
                 self.i18n.t("errors.error_title"),
                 self.i18n.t("errors.dir_not_exist", directory=directory)
             )
+            # 清空无效路径，防止下次启动时 macOS 状态恢复重复触发此错误
+            self.dir_input.clear()
 
     @Slot()
     def _browse_directory(self):
