@@ -6,12 +6,15 @@ from .exiftool_manager import get_exiftool_manager
 import glob
 import shutil
 
-from .file_utils import ensure_hidden_directory
+from .file_utils import ensure_hidden_directory, clear_readonly_attribute
 
 def raw_to_jpeg(raw_file_path):
     filename = os.path.basename(raw_file_path)
     file_prefix, file_ext = os.path.splitext(filename)
     directory_path = os.path.dirname(raw_file_path)
+
+    # 在初步生成预览图前先移除原文件只读属性，避免后续元数据写入或移动阶段失败
+    clear_readonly_attribute(raw_file_path)
     
     # V4.1.0: 使用 .superpicky/cache 目录存储临时 JPEG
     superpicky_dir = os.path.join(directory_path, ".superpicky")

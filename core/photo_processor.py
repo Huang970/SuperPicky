@@ -34,7 +34,7 @@ from tools.find_bird_util import raw_to_jpeg
 from ai_model import load_yolo_model, detect_and_draw_birds
 from tools.report_db import ReportDB
 from tools.exiftool_manager import get_exiftool_manager
-from tools.file_utils import ensure_hidden_directory
+from tools.file_utils import ensure_hidden_directory, clear_readonly_attribute
 from tools.resume_state import ResumeStateManager
 from advanced_config import get_advanced_config
 from core.rating_engine import RatingEngine, create_rating_engine_from_config
@@ -1505,6 +1505,27 @@ class PhotoProcessor:
             raw_ext = yolo_item['raw_ext']
             raw_path = yolo_item['raw_path']
             can_read_focus_raw = yolo_item['can_read_focus_raw']
+
+            writable_targets = []
+            if raw_path and os.path.exists(raw_path):
+                writable_targets.append(raw_path)
+
+            filepath_basename = os.path.basename(filepath).lower()
+            is_temp_preview_path = (
+                '.superpicky/cache' in yolo_filepath_norm or
+                filepath_basename.startswith(('tmp_', 'temp_'))
+            )
+            if filepath and os.path.exists(filepath) and not is_temp_preview_path and filepath not in writable_targets:
+                writable_targets.append(filepath)
+
+            for original_file_path in writable_targets:
+                try:
+                    clear_readonly_attribute(original_file_path)
+                except Exception as e:
+                    self._log(
+                        f"  ⚠️ 移除只读属性失败 [{os.path.basename(original_file_path)}]: {e}",
+                        "warning"
+                    )
             
             # 后处理阶段开始时间（最终日志会叠加 yolo_ms，保持单图耗时口径一致）
             photo_start_time = time.time()
