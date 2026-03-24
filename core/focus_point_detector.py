@@ -53,16 +53,33 @@ def _stop_exiftool_process():
     """停止 exiftool 常驻进程"""
     global _exiftool_process
     if _exiftool_process is not None:
+        process = _exiftool_process
         try:
-            _exiftool_process.stdin.write('-stay_open\nFalse\n'.encode('utf-8'))
-            _exiftool_process.stdin.flush()
-            _exiftool_process.wait(timeout=5)
+            if process.poll() is None and process.stdin:
+                process.stdin.write('-stay_open\nFalse\n'.encode('utf-8'))
+                process.stdin.flush()
+                process.wait(timeout=5)
         except Exception:
             try:
-                _exiftool_process.kill()
+                process.kill()
+                process.wait(timeout=2)
             except Exception:
                 pass
+        finally:
+            for pipe_name in ('stdin', 'stdout', 'stderr'):
+                pipe = getattr(process, pipe_name, None)
+                if pipe is None:
+                    continue
+                try:
+                    pipe.close()
+                except Exception:
+                    pass
         _exiftool_process = None
+
+
+def shutdown_focus_detector_process():
+    """显式关闭 FocusPointDetector 内部的 ExifTool 常驻进程。"""
+    _stop_exiftool_process()
 
 
 # 程序退出时自动清理进程

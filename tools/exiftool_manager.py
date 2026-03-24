@@ -40,7 +40,9 @@ class ExifToolManager:
         self._process = None
         self._stdout_queue = None
         self._reader_thread = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._session_lock = threading.Lock()
+        self._persistent_session_count = 0
         self._shutdown_lock = threading.Lock()
         self._is_shutdown = False
         
@@ -208,65 +210,86 @@ class ExifToolManager:
 
     def _start_process(self):
         """启动常驻 ExifTool 进程 (V4.0.5)"""
-        if self._process is not None and self._process.poll() is None:
-            return
+        with self._lock:
+            if self._process is not None and self._process.poll() is None:
+                return
 
-        try:
-            # 启动命令（不在此处使用 -fast/-ignoreMinorErrors，避免 ARW 写入后 Image Edge Viewer 无法打开）
-            # 旧版 SuperPickyOsk 写入时未使用这两项，ARW 在 Sony 软件中可正常查看
-            cmd = [
-                self.exiftool_path,
-                '-stay_open', 'True',
-                '-@', '-',
-                '-common_args',
-                '-charset', 'utf8',
-                '-overwrite_original_in_place',  # 保留文件 Birth Time（inode 不变）
-            ]
-            
-            creationflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
-            
-            # 将 stderr 合并到 stdout，避免 stderr 缓冲区塞满导致死锁
-            self._process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                cwd=self._exiftool_cwd,
-                creationflags=creationflags
-            )
-            
-            # 启动读取线程
-            self._stdout_queue = queue.Queue()
-            self._reader_thread = threading.Thread(
-                target=self._read_stdout_to_queue,
-                args=(self._process.stdout, self._stdout_queue),
-                daemon=True
-            )
-            self._reader_thread.start()
-            
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 ExifTool persistent process started (PID: {self._process.pid}, threaded read)")
-        except Exception as e:
-            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ❌ Failed to start ExifTool process: {e}")
-            self._process = None
+            try:
+                # 启动命令（不在此处使用 -fast/-ignoreMinorErrors，避免 ARW 写入后 Image Edge Viewer 无法打开）
+                # 旧版 SuperPickyOsk 写入时未使用这两项，ARW 在 Sony 软件中可正常查看
+                cmd = [
+                    self.exiftool_path,
+                    '-stay_open', 'True',
+                    '-@', '-',
+                    '-common_args',
+                    '-charset', 'utf8',
+                    '-overwrite_original_in_place',  # 保留文件 Birth Time（inode 不变）
+                ]
+                
+                creationflags = subprocess.CREATE_NO_WINDOW if sys.platform.startswith('win') else 0
+                
+                # 将 stderr 合并到 stdout，避免 stderr 缓冲区塞满导致死锁
+                self._process = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=self._exiftool_cwd,
+                    creationflags=creationflags
+                )
+                
+                # 启动读取线程
+                self._stdout_queue = queue.Queue()
+                self._reader_thread = threading.Thread(
+                    target=self._read_stdout_to_queue,
+                    args=(self._process.stdout, self._stdout_queue),
+                    daemon=True
+                )
+                self._reader_thread.start()
+                
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🚀 ExifTool persistent process started (PID: {self._process.pid}, threaded read)")
+            except Exception as e:
+                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ❌ Failed to start ExifTool process: {e}")
+                self._process = None
 
     def _stop_process(self):
         """停止常驻进程"""
-        if self._process:
-            pid = self._process.pid
+        with self._lock:
+            if not self._process:
+                return
+
+            process = self._process
+            reader_thread = self._reader_thread
+            pid = process.pid
             try:
-                self._process.stdin.write(b'-stay_open\nFalse\n')
-                self._process.stdin.flush()
-                self._process.wait(timeout=2)
-                print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ ExifTool process (PID: {pid}) stopped gracefully")
+                if process.poll() is None and process.stdin:
+                    process.stdin.write(b'-stay_open\nFalse\n')
+                    process.stdin.flush()
+                    process.wait(timeout=2)
+                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ ExifTool process (PID: {pid}) stopped gracefully")
             except Exception as e:
                 print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⚠️  ExifTool process (PID: {pid}) stop failed: {e}")
             finally:
-                if self._process.poll() is None:
+                if process.poll() is None:
                     try:
-                        self._process.kill()
+                        process.kill()
+                        process.wait(timeout=2)
                         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ✅ ExifTool process (PID: {pid}) killed")
                     except Exception as e:
                         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] ⚠️  ExifTool process (PID: {pid}) kill failed: {e}")
+                for pipe_name in ('stdin', 'stdout', 'stderr'):
+                    pipe = getattr(process, pipe_name, None)
+                    if pipe is None:
+                        continue
+                    try:
+                        pipe.close()
+                    except Exception:
+                        pass
+                if reader_thread is not None and reader_thread.is_alive():
+                    try:
+                        reader_thread.join(timeout=2)
+                    except Exception:
+                        pass
                 self._process = None
                 self._stdout_queue = None
                 self._reader_thread = None
@@ -278,6 +301,8 @@ class ExifToolManager:
             if self._is_shutdown:
                 return
             self._is_shutdown = True
+            with self._session_lock:
+                self._persistent_session_count = 0
 
             print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 🔄 ExifToolManager shutting down...")
             self._stop_process()
@@ -291,6 +316,35 @@ class ExifToolManager:
             self.shutdown()
         except Exception:
             pass
+
+    def open_persistent_session(self, owner: str = "") -> None:
+        """开启显式常驻会话，确保处理阶段内 ExifTool 进程保持存活。"""
+        should_start = False
+        with self._session_lock:
+            self._persistent_session_count += 1
+            should_start = self._persistent_session_count == 1
+
+        if not should_start:
+            return
+
+        self._start_process()
+        if self._process is None or self._process.poll() is not None:
+            with self._session_lock:
+                self._persistent_session_count = max(0, self._persistent_session_count - 1)
+            owner_suffix = f" ({owner})" if owner else ""
+            raise RuntimeError(f"ExifTool persistent session start failed{owner_suffix}")
+
+    def close_persistent_session(self, owner: str = "") -> None:
+        """关闭显式常驻会话；最后一个会话结束时停止 ExifTool 进程。"""
+        should_stop = False
+        with self._session_lock:
+            if self._persistent_session_count <= 0:
+                return
+            self._persistent_session_count -= 1
+            should_stop = self._persistent_session_count == 0
+
+        if should_stop:
+            self._stop_process()
 
     def _read_until_ready(self, timeout=10.0) -> bytes:
         """从队列读取直到 {ready}，支持超时"""
