@@ -605,11 +605,6 @@ class PhotoProcessor:
                 avg_time=self.stats['avg_time']
             )
         finally:
-            try:
-                from core.focus_point_detector import shutdown_focus_detector_process
-                shutdown_focus_detector_process()
-            except Exception as e:
-                self._log(f"⚠️ Focus ExifTool cleanup failed: {e}", "warning")
             if exiftool_session_opened and exiftool_mgr is not None:
                 try:
                     exiftool_mgr.close_persistent_session("photo_processor.process")
