@@ -2731,7 +2731,6 @@ class SuperPickyMainWindow(QMainWindow):
     def _show_update_result_dialog(self, has_update: bool, update_info):
         """显示更新检测结果对话框"""
         try:
-            print("[DEBUG] _show_update_result_dialog 开始执行")
             from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
             import webbrowser
             
