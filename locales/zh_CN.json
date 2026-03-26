@@ -430,7 +430,12 @@
     "not_writable": "无写权限",
     "disk_check_failed": "⚠️ 磁盘检查失败: {error}",
     "ram_ok": "💾 可用内存: {free} GB ✅",
-    "ram_low": "⚠️ 可用内存仅 {free} GB，模型加载可能较慢"
+    "ram_low": "⚠️ 可用内存仅 {free} GB，模型加载可能较慢",
+    "exiftool_error_title": "ExifTool 不可用",
+    "exiftool_error_msg": "无法启动 ExifTool，照片评分将无法写入 EXIF 元数据。\n\n错误信息：{error}\n\n请重新安装应用或检查软件完整性。",
+    "no_photos_title": "未找到照片",
+    "no_photos_msg": "目录中没有支持的照片文件（JPG / RAW / HEIF）：\n{directory}",
+    "models_still_loading": "⚠️ 模型仍在后台预加载，处理时首张照片可能稍慢"
   },
   "stats": {
     "total": "总计",

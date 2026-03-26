@@ -668,6 +668,7 @@ class SuperPickyMainWindow(QMainWindow):
         
         # osk flex,countly.com 63fda2e
         self._startup_prompts_ran = False
+        self._preload_done = False  # 模型预加载是否完成
         
         # V4.2: 使用默认窗口大小，不最大化
         # self.showMaximized()  # 注释掉这行，使用默认大小
@@ -1924,6 +1925,43 @@ class SuperPickyMainWindow(QMainWindow):
         finally:
             self._resume_prompt_handled = False
 
+        # ── 开始前自检 ──────────────────────────────────────────
+        # 1. ExifTool 健康检查（阻断型）
+        try:
+            from tools.exiftool_manager import get_exiftool_manager
+            get_exiftool_manager()  # 触发 _verify_exiftool()，失败会 raise RuntimeError
+        except Exception as _et_err:
+            StyledMessageBox.warning(
+                self,
+                self.i18n.t("health.exiftool_error_title"),
+                self.i18n.t("health.exiftool_error_msg", error=str(_et_err)),
+            )
+            return
+
+        # 2. 照片数量预扫描（阻断型）
+        try:
+            import os as _os
+            from constants import IMAGE_EXTENSIONS
+            _ext_set = set(e.lower() for e in IMAGE_EXTENSIONS)
+            _photo_count = sum(
+                1 for _e in _os.scandir(self.directory_path)
+                if _e.is_file() and _os.path.splitext(_e.name)[1].lower() in _ext_set
+            )
+            if _photo_count == 0:
+                StyledMessageBox.warning(
+                    self,
+                    self.i18n.t("health.no_photos_title"),
+                    self.i18n.t("health.no_photos_msg", directory=self.directory_path),
+                )
+                return
+        except Exception:
+            pass  # 扫描失败不阻断，交给 worker 处理
+
+        # 3. 模型预加载状态提示（非阻断）
+        if not self._preload_done:
+            self._log(self.i18n.t("health.models_still_loading"), "warning")
+        # ────────────────────────────────────────────────────────
+
         # 清空日志和进度
         self.log_text.clear()
         self.progress_bar.setValue(0)
@@ -2811,6 +2849,7 @@ class SuperPickyMainWindow(QMainWindow):
                     self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
                     "warning"
                 )
+            self._preload_done = True
 
         thread = threading.Thread(target=preload_task, daemon=True)
         thread.start()
