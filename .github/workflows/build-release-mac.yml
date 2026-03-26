@@ -201,4 +201,5 @@ jobs:
           tag_name: ${{ steps.release_meta.outputs.tag }}
           name: ${{ steps.release_meta.outputs.name }}
           body_path: ChangeLog.md
+          prerelease: true
           files: ${{ env.DMG_PATH }}
