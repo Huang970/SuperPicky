@@ -1726,7 +1726,8 @@ class PhotoProcessor:
                         h_orig_box = min(h_orig_box, h_orig - y_orig)
                         
                         # 裁剪鸟的区域（保存BGR版本供关键点/飞版/曝光使用）
-                        bird_crop_bgr = orig_img[y_orig:y_orig+h_orig_box, x_orig:x_orig+w_orig_box]
+                        # .copy() 断开对 orig_img 的 view 依赖，使 orig_img 可在 TOPIQ 后提前释放
+                        bird_crop_bgr = orig_img[y_orig:y_orig+h_orig_box, x_orig:x_orig+w_orig_box].copy()
                         
                         # 同样裁剪 mask (如果存在)
                         if bird_mask is not None:
@@ -1820,6 +1821,10 @@ class PhotoProcessor:
                         topiq = scorer.calculate_nima(filepath)
                 except Exception as e:
                     pass  # V3.3: 简化日志，静默 TOPIQ 计算失败
+                finally:
+                    # TOPIQ 计算后立即释放原图（bird_crop_bgr 已是独立 copy，不受影响）
+                    del orig_img
+                    orig_img = None
                 add_photo_stage('topiq', (time.time() - topiq_start) * 1000)
             # V3.8: 移除跳过日志，改用 all_keypoints_hidden 后跳过的情况会少很多
             
