@@ -1551,8 +1551,12 @@ class PhotoProcessor:
                     import torch, gc
                     if torch.backends.mps.is_available():
                         torch.mps.empty_cache()
+                        self._log(f"  🧹 [第{i}张] MPS 显存已清理", "info")
                     elif torch.cuda.is_available():
                         torch.cuda.empty_cache()
+                        self._log(f"  🧹 [第{i}张] CUDA 显存已清理", "info")
+                    else:
+                        self._log(f"  🧹 [第{i}张] GC 已执行", "info")
                     gc.collect()
                 except Exception:
                     pass
