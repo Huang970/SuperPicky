@@ -2861,11 +2861,53 @@ class SuperPickyMainWindow(QMainWindow):
                 layout.addWidget(btn_frame)
             
             layout.addSpacing(8)
-            
-            # 关闭按钮
+
+            # include_prerelease 勾选框（仅有更新时显示）
+            if has_update:
+                from PySide6.QtWidgets import QCheckBox
+                from advanced_config import get_advanced_config as _get_cfg
+                _cfg = _get_cfg()
+                prerelease_cb = QCheckBox(self.i18n.t("update.include_prerelease"))
+                prerelease_cb.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
+                prerelease_cb.setChecked(_cfg.include_prerelease)
+                def _on_prerelease_toggled(checked):
+                    _c = _get_cfg()
+                    _c.set_include_prerelease(checked)
+                    _c.save()
+                prerelease_cb.toggled.connect(_on_prerelease_toggled)
+                layout.addWidget(prerelease_cb)
+                layout.addSpacing(4)
+
+            # 关闭 / 跳过此版本 按钮行
             close_layout = QHBoxLayout()
             close_layout.addStretch()
-            
+
+            if has_update and update_info:
+                skip_btn = QPushButton(self.i18n.t("update.skip_version"))
+                skip_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {COLORS['bg_card']};
+                        border: 1px solid {COLORS['border']};
+                        color: {COLORS['text_muted']};
+                        border-radius: 6px;
+                        padding: 8px 16px;
+                        font-size: 13px;
+                    }}
+                    QPushButton:hover {{
+                        border-color: {COLORS['text_muted']};
+                        color: {COLORS['text_secondary']};
+                    }}
+                """)
+                def _on_skip():
+                    from advanced_config import get_advanced_config as _get_cfg
+                    _cfg = _get_cfg()
+                    _cfg.set_ignored_update_version(update_info.get('version', ''))
+                    _cfg.save()
+                    dialog.accept()
+                skip_btn.clicked.connect(_on_skip)
+                close_layout.addWidget(skip_btn)
+                close_layout.addSpacing(8)
+
             close_btn = QPushButton(self.i18n.t("update.close"))
             close_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -2883,12 +2925,10 @@ class SuperPickyMainWindow(QMainWindow):
             """)
             close_btn.clicked.connect(dialog.accept)
             close_layout.addWidget(close_btn)
-            
+
             layout.addLayout(close_layout)
-            
-            print("[DEBUG] 即将显示弹窗")
+
             dialog.exec()
-            print("[DEBUG] 弹窗已关闭")
             
         except Exception as e:
             import traceback
