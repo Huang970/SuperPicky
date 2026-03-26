@@ -2721,16 +2721,30 @@ class SuperPickyMainWindow(QMainWindow):
                 self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"BirdID: {e}"), "warning")
                 results.append(("BirdID", False, str(e)))
 
-            # 汇总写入日志
-            ok = [name for name, ok, _ in results if ok]
-            fail = [(name, err) for name, ok, err in results if not ok]
+            # 汇总：GUI 只显示一行结论，详情写入日志文件
+            ok_names = [name for name, s, _ in results if s]
+            fail_items = [(name, err) for name, s, err in results if not s]
             summary_lines = ["[Preload Summary]"]
-            for name in ok:
+            for name in ok_names:
                 summary_lines.append(f"  ✅ {name}")
-            for name, err in fail:
+            for name, err in fail_items:
                 summary_lines.append(f"  ❌ {name}: {err}")
-            summary = "\n".join(summary_lines)
-            _emit_and_log(summary, "success" if not fail else "warning")
+            try:
+                from tools.utils import log_message, get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message("\n".join(summary_lines), d, file_only=True)
+            except Exception:
+                pass
+
+            if not fail_items:
+                self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
+            else:
+                failed_str = ", ".join(name for name, _ in fail_items)
+                self.log_signal.emit(
+                    self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
+                    "warning"
+                )
 
         thread = threading.Thread(target=preload_task, daemon=True)
         thread.start()

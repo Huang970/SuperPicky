@@ -418,8 +418,10 @@
     "yolo_loaded": "✅ YOLO detection model loaded",
     "keypoint_loaded": "✅ Keypoint model loaded",
     "flight_loaded": "✅ Flight detection model loaded",
+    "iqa_loaded": "✅ Aesthetic scoring model loaded",
     "birdid_loaded": "✅ Bird ID model loaded",
-    "preload_complete": "🎉 All models preloaded!\n",
+    "preload_complete": "🎉 All models preloaded!",
+    "preload_complete_with_errors": "⚠️ Preload done, some models failed: {failed}",
     "preload_failed": "⚠️ Model preload failed: {error}"
   },
   "stats": {

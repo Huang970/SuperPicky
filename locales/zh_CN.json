@@ -418,8 +418,10 @@
     "yolo_loaded": "✅ YOLO检测模型已加载",
     "keypoint_loaded": "✅ 关键点模型已加载",
     "flight_loaded": "✅ 飞版检测模型已加载",
+    "iqa_loaded": "✅ 美学评分模型已加载",
     "birdid_loaded": "✅ 识鸟模型已加载",
-    "preload_complete": "🎉 所有模型预加载完成！\n",
+    "preload_complete": "🎉 所有模型预加载完成！",
+    "preload_complete_with_errors": "⚠️ 预加载完成，部分模型失败: {failed}",
     "preload_failed": "⚠️ 模型预加载失败: {error}"
   },
   "stats": {
