@@ -34,7 +34,8 @@ from tools.find_bird_util import raw_to_jpeg
 from ai_model import load_yolo_model, detect_and_draw_birds
 from tools.report_db import ReportDB
 from tools.exiftool_manager import get_exiftool_manager
-from tools.file_utils import ensure_hidden_directory
+from tools.file_utils import ensure_hidden_directory, clear_readonly_attribute
+from tools.resume_state import ResumeStateManager
 from advanced_config import get_advanced_config
 from core.rating_engine import RatingEngine, create_rating_engine_from_config
 from core.keypoint_detector import KeypointDetector, get_keypoint_detector
@@ -54,7 +55,7 @@ class ProcessingSettings:
     ai_confidence: int = 50
     sharpness_threshold: int = 400   # 头部区域锐度达标阈值 (200-600)
     nima_threshold: float = 5.0      # V3.9.4: TOPIQ 美学达标阈值，与 GUI 滑块默认值一致
-    save_crop: bool = False
+    save_crop: bool = True
     normalization_mode: str = 'log_compression'  # 默认使用log_compression，与GUI一致
     detect_flight: bool = True       # V3.4: 飞版检测开关
     detect_exposure: bool = True     # V3.9.4: 曝光检测开关（默认开启，与 GUI 一致）
@@ -79,6 +80,7 @@ class ProcessingCallbacks:
     """回调函数（用于进度更新和日志输出）"""
     log: Optional[Callable[[str, str], None]] = None
     progress: Optional[Callable[[int], None]] = None
+    should_stop: Optional[Callable[[], bool]] = None
     crop_preview: Optional[Callable[[any], None]] = None  # V4.2: 裁剪预览回调
 
 
@@ -90,6 +92,10 @@ class ProcessingResult:
     star_3_photos: List[Dict] = field(default_factory=list)
     total_time: float = 0.0
     avg_time: float = 0.0
+
+
+class ProcessingCancelled(RuntimeError):
+    """Raised when processing is cancelled by the caller."""
 
 
 class PhotoProcessor:
@@ -129,22 +135,6 @@ class PhotoProcessor:
         # 获取国际化实例
         self.i18n = get_i18n()
         
-        # DEBUG: 输出参数
-        on_off = lambda b: self.i18n.t("labels.yes") if b else self.i18n.t("labels.no")
-        self._log(f"\n🔍 DEBUG - {self.i18n.t('labels.processing')}:")
-        self._log(f"  📊 {self.i18n.t('labels.ai_confidence')}: {settings.ai_confidence}")
-        self._log(f"  📏 {self.i18n.t('labels.sharpness_short')}: {settings.sharpness_threshold}")
-        self._log(f"  🎨 {self.i18n.t('labels.aesthetics')}: {settings.nima_threshold}")
-        self._log(f"  🔧 {self.i18n.t('labels.normalization')}: {settings.normalization_mode}")
-        self._log(f"  🦅 {self.i18n.t('labels.flight_detection')}: {on_off(settings.detect_flight)}")
-        self._log(f"  📸 {self.i18n.t('labels.exposure_detection')}: {on_off(settings.detect_exposure)}")
-        self._log(f"  🐦 BirdID: {on_off(settings.auto_identify)}")
-        if settings.auto_identify:
-            country = settings.birdid_country_code or "Auto(GPS)"
-            region = settings.birdid_region_code or "All"
-            self._log(f"     └─ Country: {country}, Region: {region}")
-        self._log(f"  ⚙️  Min Sharpness: {self.config.min_sharpness}")
-        self._log(f"  ⚙️  Min Aesthetics: {self.config.min_nima}\n")
         
         # 统计数据（支持 0/1/2/3 星）
         self.stats = {
@@ -174,6 +164,8 @@ class PhotoProcessor:
         self.burst_map = {}  # V4.0.4: Track burst group IDs: {filepath: group_id}, 0 = not a burst
         # SQLite 报告数据库（替代 CSV 缓存）
         self.report_db = None  # 在 _run_ai_detection 中初始化
+        self.resume_state = ResumeStateManager(dir_path)
+        self._stop_requested = False
         
         # 性能日志开关（支持 settings 和环境变量）
         env_perf = os.getenv("SUPERPICKY_PERF_LOG", "").strip().lower() in {"1", "true", "yes", "on"}
@@ -210,6 +202,23 @@ class PhotoProcessor:
         """内部进度更新"""
         if self.callbacks.progress:
             self.callbacks.progress(percent)
+
+    def request_stop(self) -> None:
+        self._stop_requested = True
+
+    def _should_stop(self) -> bool:
+        if self._stop_requested:
+            return True
+        if not self.callbacks.should_stop:
+            return False
+        try:
+            return bool(self.callbacks.should_stop())
+        except Exception:
+            return False
+
+    def _check_cancelled(self) -> None:
+        if self._should_stop():
+            raise ProcessingCancelled("Processing cancelled")
     
     def _perf_add_stage(self, stage: str, ms: float):
         """累计阶段耗时（毫秒）"""
@@ -463,11 +472,19 @@ class PhotoProcessor:
         penalty = self.ISO_PENALTY_FACTOR * math.log2(iso_value / self.ISO_BASE)
         factor = max(self.ISO_MIN_FACTOR, 1.0 - penalty)
         return factor
+
+    @staticmethod
+    def _resume_prefix(filename: str) -> str:
+        return os.path.splitext(os.path.basename(filename))[0]
+
+    def _sort_processing_files(self, files_tbr: List[str]) -> List[str]:
+        return sorted(files_tbr, key=lambda item: self._resume_prefix(item).lower())
     
     def process(
         self,
         organize_files: bool = True,
-        cleanup_temp: bool = True
+        cleanup_temp: bool = True,
+        resume: bool = False
     ) -> ProcessingResult:
         """
         主处理流程
@@ -481,66 +498,102 @@ class PhotoProcessor:
         """
         start_time = time.time()
         self.stats['start_time'] = start_time
-        
-        # 阶段1: 文件扫描
-        raw_dict, jpg_dict, files_tbr = self._scan_files()
-        
-        # 阶段1.5: V4.0.4 早期连拍检测（只基于时间戳）
-        if self.settings.detect_burst:
-            self.burst_map = self._detect_bursts_early(raw_dict)
-        
-        # 阶段2: RAW转换
-        raw_files_to_convert = self._identify_raws_to_convert(raw_dict, jpg_dict, files_tbr)
-        if raw_files_to_convert:
-            self._convert_raws(raw_files_to_convert, files_tbr)
-        
-        # 阶段3: AI检测与评分
-        self._process_images(files_tbr, raw_dict)
-        
-        # 阶段4: 精选旗标计算（metadata_write_mode=none 时跳过）
-        if get_advanced_config().get_metadata_write_mode() != "none":
-            self._calculate_picked_flags()
-        
-        # 阶段5: 文件组织
-        if organize_files:
-            self._move_files_to_rating_folders(raw_dict)
-        
-        # 阶段6: V4.0.4 跨目录连拍合并（在文件整理完成后）
-        if self.settings.detect_burst and self.burst_map and organize_files:
-            burst_stats = self._consolidate_burst_groups(raw_dict)
-            self.stats['burst_groups'] = burst_stats.get('groups', 0)
-            self.stats['burst_moved'] = burst_stats.get('moved', 0)
-        
-        # 阶段7: 临时文件处理
-        if cleanup_temp:
-            self._cleanup_temp_files(files_tbr, raw_dict)
-        else:
-            # V4.0.5: 保留临时文件时，将路径写入数据库
-            self._save_temp_paths_to_db()
+        exiftool_mgr = None
+        exiftool_session_opened = False
+        metadata_write_mode = str(get_advanced_config().get_metadata_write_mode()).strip().lower()
+
+        try:
+            if metadata_write_mode != "none":
+                exiftool_mgr = get_exiftool_manager()
+                exiftool_mgr.open_persistent_session("photo_processor.process")
+                exiftool_session_opened = True
+
+            # 阶段1: 文件扫描
+            raw_dict, jpg_dict, files_tbr = self._scan_files()
             
-        # 阶段8: 清理过期缓存 (V4.1)
-        self._cleanup_expired_cache()
-        
-        # 记录结束时间
-        end_time = time.time()
-        self.stats['end_time'] = end_time
-        self.stats['total_time'] = end_time - start_time
-        self.stats['avg_time'] = (
-            self.stats['total_time'] / self.stats['total']
-            if self.stats['total'] > 0 else 0
-        )
-        
-        # 关闭数据库连接（在所有阶段完成后）
-        if hasattr(self, 'report_db') and self.report_db:
-            self.report_db.close()
-        
-        return ProcessingResult(
-            stats=self.stats.copy(),
-            file_ratings=self.file_ratings.copy(),
-            star_3_photos=self.star_3_photos.copy(),
-            total_time=self.stats['total_time'],
-            avg_time=self.stats['avg_time']
-        )
+            # 阶段1.5: V4.0.4 早期连拍检测（只基于时间戳）
+            if self.settings.detect_burst:
+                self.burst_map = self._detect_bursts_early(raw_dict)
+            
+            # 阶段2: RAW转换
+            raw_files_to_convert = self._identify_raws_to_convert(raw_dict, jpg_dict, files_tbr)
+            if raw_files_to_convert:
+                self._convert_raws(raw_files_to_convert, files_tbr)
+
+            files_tbr = self._sort_processing_files(files_tbr)
+            display_start = 1
+            display_total = len(files_tbr)
+            ordered_prefixes = [self._resume_prefix(item) for item in files_tbr]
+            if resume:
+                plan = self.resume_state.get_resume_plan(ordered_prefixes)
+                if plan:
+                    prefix_to_file = {self._resume_prefix(item): item for item in files_tbr}
+                    files_tbr = [prefix_to_file[prefix] for prefix in plan["pending_prefixes"] if prefix in prefix_to_file]
+                    display_start = int(plan["next_index"])
+                    display_total = int(plan["total_files"])
+                else:
+                    self.resume_state.start(ordered_prefixes)
+            else:
+                self.resume_state.start(ordered_prefixes)
+
+            self._check_cancelled()
+            
+            # 阶段3: AI检测与评分
+            self._process_images(files_tbr, raw_dict, display_start=display_start, display_total=display_total)
+            
+            # 阶段4: 精选旗标计算（metadata_write_mode=none 时跳过）
+            if metadata_write_mode != "none":
+                self._calculate_picked_flags()
+            
+            # 阶段5: 文件组织
+            if organize_files:
+                self._move_files_to_rating_folders(raw_dict)
+            
+            # 阶段6: V4.0.4 跨目录连拍合并（在文件整理完成后）
+            if self.settings.detect_burst and self.burst_map and organize_files:
+                burst_stats = self._consolidate_burst_groups(raw_dict)
+                self.stats['burst_groups'] = burst_stats.get('groups', 0)
+                self.stats['burst_moved'] = burst_stats.get('moved', 0)
+            
+            # 阶段7: 临时文件处理
+            if cleanup_temp:
+                self._cleanup_temp_files(files_tbr, raw_dict)
+            else:
+                # V4.0.5: 保留临时文件时，将路径写入数据库
+                self._save_temp_paths_to_db()
+                
+            # 阶段8: 清理过期缓存 (V4.1)
+            self._cleanup_expired_cache()
+            
+            # 记录结束时间
+            end_time = time.time()
+            self.stats['end_time'] = end_time
+            self.stats['total_time'] = end_time - start_time
+            self.stats['avg_time'] = (
+                self.stats['total_time'] / self.stats['total']
+                if self.stats['total'] > 0 else 0
+            )
+            
+            # 关闭数据库连接（在所有阶段完成后）
+            if hasattr(self, 'report_db') and self.report_db:
+                self.report_db.close()
+                self.report_db = None
+
+            self.resume_state.clear()
+            
+            return ProcessingResult(
+                stats=self.stats.copy(),
+                file_ratings=self.file_ratings.copy(),
+                star_3_photos=self.star_3_photos.copy(),
+                total_time=self.stats['total_time'],
+                avg_time=self.stats['avg_time']
+            )
+        finally:
+            if exiftool_session_opened and exiftool_mgr is not None:
+                try:
+                    exiftool_mgr.close_persistent_session("photo_processor.process")
+                except Exception as e:
+                    self._log(f"⚠️ ExifTool session close failed: {e}", "warning")
     
     def _scan_files(self) -> Tuple[dict, dict, list]:
         """扫描目录文件"""
@@ -867,8 +920,6 @@ class PhotoProcessor:
                     files_tbr.append(jpeg_filename)
                     self.temp_converted_jpegs.add(jpeg_filename)  # 标记为临时文件
                     converted_count += 1
-                    if converted_count % 5 == 0 or converted_count == len(raw_files_to_convert):
-                        self._log(self.i18n.t("logs.raw_converted", current=converted_count, total=len(raw_files_to_convert)))
                 else:
                     self._log(f"  ❌ {self.i18n.t('logs.batch_failed', start=key, end=key, error=result)}", "error")
         
@@ -878,7 +929,7 @@ class PhotoProcessor:
         time_str = f"{raw_time:.1f}s" if raw_time >= 1 else f"{raw_time*1000:.0f}ms"
         self._log(self.i18n.t("logs.raw_conversion_time", time_str=time_str, avg=avg_time))
     
-    def _process_images(self, files_tbr, raw_dict):
+    def _process_images(self, files_tbr, raw_dict, display_start: int = 1, display_total: int = None):
         """处理所有图片 - AI检测、关键点检测与评分"""
         # 获取模型（已在启动时预加载，此处仅获取引用）
         model = load_yolo_model()
@@ -907,8 +958,12 @@ class PhotoProcessor:
                 self._log("⚠️  Flight model not found, skipping flight detection", "warning")
                 use_flight = False
         
-        total_files = len(files_tbr)
+        total_files = display_total if display_total is not None else len(files_tbr)
         self._log(self.i18n.t("logs.files_to_process", total=total_files))
+
+        def mark_resume_completed(prefix: str):
+            if prefix:
+                self.resume_state.mark_completed(prefix)
         
         exiftool_mgr = get_exiftool_manager()
         metadata_batch: List[Dict] = []
@@ -1010,7 +1065,11 @@ class PhotoProcessor:
         inference_pool = ThreadPoolExecutor(max_workers=2)
         
         # BirdID 异步队列：将识别耗时与主处理流程重叠
-        birdid_executor = ThreadPoolExecutor(max_workers=1) if self.settings.auto_identify else None
+        # CPU 推理可多线程并行；MPS/CUDA 设备并发线程安全性有限，保持单线程
+        from config import get_best_device
+        _birdid_device = str(get_best_device())
+        _birdid_workers = 4 if _birdid_device == 'cpu' else 1
+        birdid_executor = ThreadPoolExecutor(max_workers=_birdid_workers) if self.settings.auto_identify else None
         birdid_tasks = deque()
         identify_bird_fn = None
         if self.settings.auto_identify:
@@ -1024,7 +1083,8 @@ class PhotoProcessor:
             file_prefix: str,
             image_path: str,
             title_targets: List[str],
-            source_filename: Optional[str] = None
+            source_filename: Optional[str] = None,
+            bird_crop_pil=None,  # 主流水线已裁剪的 PIL Image，避免 BirdID 重跑 YOLO
         ):
             if birdid_executor is None or identify_bird_fn is None:
                 return
@@ -1043,7 +1103,8 @@ class PhotoProcessor:
                     self.settings.birdid_country_code,
                     self.settings.birdid_region_code,
                     1,      # top_k
-                    nf      # name_format
+                    nf,     # name_format
+                    bird_crop_pil,  # preloaded_crop
                 )
                 self._perf_add_stage('birdid_submit', (time.time() - submit_start) * 1000)
                 birdid_tasks.append((future, file_prefix, list(title_targets), source_display))
@@ -1163,8 +1224,8 @@ class PhotoProcessor:
         # 如需强制开启/关闭，可通过 SUPERPICKY_YOLO_PREFETCH 覆盖。
         mps_available = False
         try:
-            import torch
-            mps_available = bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available())
+            from config import get_best_device
+            mps_available = bool(get_best_device().type == 'mps')
         except Exception:
             mps_available = False
         
@@ -1172,7 +1233,8 @@ class PhotoProcessor:
         if env_yolo_prefetch_raw:
             yolo_prefetch_enabled = env_yolo_prefetch_raw not in {"0", "false", "no", "off"}
         else:
-            yolo_prefetch_enabled = not mps_available
+            # yolo_infer_lock 已串行化所有 YOLO 推理调用，MPS 不存在并发访问风险
+            yolo_prefetch_enabled = True
         
         yolo_prefetch_depth = 3
         env_yolo_prefetch_depth = os.getenv("SUPERPICKY_YOLO_PREFETCH_DEPTH", "").strip()
@@ -1299,6 +1361,35 @@ class PhotoProcessor:
         exif_prefetch_results = {}
         exif_prefetch_done = False
         exif_prefetch_cond = threading.Condition()
+
+        def cancel_processing() -> None:
+            if not self._should_stop():
+                return
+            if metadata_async_enabled and metadata_queue is not None:
+                try:
+                    metadata_queue.put_nowait(None)
+                except Exception:
+                    pass
+            if birdid_executor is not None:
+                try:
+                    birdid_executor.shutdown(wait=False, cancel_futures=True)
+                except TypeError:
+                    birdid_executor.shutdown(wait=False)
+                except Exception:
+                    pass
+            try:
+                inference_pool.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                inference_pool.shutdown(wait=False)
+            except Exception:
+                pass
+            if self.report_db:
+                try:
+                    self.report_db.close()
+                except Exception:
+                    pass
+                self.report_db = None
+            raise ProcessingCancelled("Processing cancelled")
         
         if exif_prefetch_enabled:
             def exif_prefetch_worker():
@@ -1334,7 +1425,9 @@ class PhotoProcessor:
         elif self._perf_enabled:
             self._log("  ⚙️ EXIF prefetch: off")
 
-        for i in range(1, total_files + 1):
+        for local_index in range(1, len(files_tbr) + 1):
+            cancel_processing()
+            i = display_start + local_index - 1
             photo_stage_ms = {}
             
             def add_photo_stage(stage: str, ms: float):
@@ -1346,14 +1439,20 @@ class PhotoProcessor:
             # 从预取队列获取 YOLO 结果；未启用预取时回退为同步执行
             if yolo_result_queue is not None:
                 yolo_wait_start = time.time()
-                yolo_item = yolo_result_queue.get()
+                while True:
+                    cancel_processing()
+                    try:
+                        yolo_item = yolo_result_queue.get(timeout=0.1)
+                        break
+                    except queue.Empty:
+                        continue
                 yolo_wait_ms = (time.time() - yolo_wait_start) * 1000
                 if yolo_wait_ms > 0.1:
                     add_photo_stage('yolo_queue_wait', yolo_wait_ms)
                 if yolo_item is None:
                     break
             else:
-                filename_inline = files_tbr[i - 1]
+                filename_inline = files_tbr[local_index - 1]
                 yolo_item = build_yolo_item(i, filename_inline)
             
             prefetched_exif = None
@@ -1361,10 +1460,11 @@ class PhotoProcessor:
             if exif_prefetch_enabled:
                 exif_wait_start = time.time()
                 with exif_prefetch_cond:
-                    while i not in exif_prefetch_results and not exif_prefetch_done:
+                    while local_index not in exif_prefetch_results and not exif_prefetch_done:
+                        cancel_processing()
                         exif_prefetch_cond.wait(timeout=0.01)
-                    if i in exif_prefetch_results:
-                        prefetched_exif = exif_prefetch_results.pop(i)
+                    if local_index in exif_prefetch_results:
+                        prefetched_exif = exif_prefetch_results.pop(local_index)
                         exif_prefetched = True
                 exif_wait_ms = (time.time() - exif_wait_start) * 1000
                 if exif_wait_ms > 0.1:
@@ -1409,6 +1509,27 @@ class PhotoProcessor:
             raw_ext = yolo_item['raw_ext']
             raw_path = yolo_item['raw_path']
             can_read_focus_raw = yolo_item['can_read_focus_raw']
+
+            writable_targets = []
+            if raw_path and os.path.exists(raw_path):
+                writable_targets.append(raw_path)
+
+            filepath_basename = os.path.basename(filepath).lower()
+            is_temp_preview_path = (
+                '.superpicky/cache' in yolo_filepath_norm or
+                filepath_basename.startswith(('tmp_', 'temp_'))
+            )
+            if filepath and os.path.exists(filepath) and not is_temp_preview_path and filepath not in writable_targets:
+                writable_targets.append(filepath)
+
+            for original_file_path in writable_targets:
+                try:
+                    clear_readonly_attribute(original_file_path)
+                except Exception as e:
+                    self._log(
+                        f"  ⚠️ 移除只读属性失败 [{os.path.basename(original_file_path)}]: {e}",
+                        "warning"
+                    )
             
             # 后处理阶段开始时间（最终日志会叠加 yolo_ms，保持单图耗时口径一致）
             photo_start_time = time.time()
@@ -1422,10 +1543,28 @@ class PhotoProcessor:
             if should_update:
                 progress = int((i / total_files) * 100)
                 self._progress(progress)
+
+            # 周期性 GPU 显存清理（每 200 张）
+            # MPS 不像 CUDA 会自动回收，长批次（如 13000 张）会导致显存耗尽
+            if i % 200 == 0:
+                try:
+                    import torch, gc
+                    if torch.backends.mps.is_available():
+                        torch.mps.empty_cache()
+                        self._log(f"  🧹 [第{i}张] MPS 显存已清理", "info")
+                    elif torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                        self._log(f"  🧹 [第{i}张] CUDA 显存已清理", "info")
+                    else:
+                        self._log(f"  🧹 [第{i}张] GC 已执行", "info")
+                    gc.collect()
+                except Exception:
+                    pass
             
             result = yolo_item.get('result')
             if result is None:
                 self._log(yolo_item.get('error') or self.i18n.t("logs.cannot_process", filename=filename), "error")
+                mark_resume_completed(original_prefix)
                 continue
             
             # V4.2: 解构 AI 结果（现在有 9 个返回值，包含 bird_count）
@@ -1491,6 +1630,7 @@ class PhotoProcessor:
                             'caption': f"{rating_value}星 | {reason}",
                         })
                 
+                mark_resume_completed(original_prefix)
                 self._perf_record_photo(photo_time_ms, photo_stage_ms, early_exit=True)
 
                 # 即使置信度不足，只要检测到鸟就生成 crop_debug 供浏览预览
@@ -1498,7 +1638,8 @@ class PhotoProcessor:
                 if detected and bird_bbox is not None and img_dims is not None:
                     try:
                         import cv2 as _cv2_early
-                        _orig = _cv2_early.imread(filepath)
+                        # _orig = _cv2_early.imread(filepath)
+                        _orig = _cv2_early.imdecode(np.fromfile(filepath, dtype=np.uint8), _cv2_early.IMREAD_COLOR)
                         if _orig is not None:
                             _h, _w = _orig.shape[:2]
                             _sw, _sh = img_dims
@@ -1547,7 +1688,8 @@ class PhotoProcessor:
             if use_keypoints and detected and bird_bbox is not None and img_dims is not None:
                 try:
                     import cv2
-                    orig_img = cv2.imread(filepath)  # 只读取一次!
+                    # orig_img = cv2.imread(filepath)  # 只读取一次!
+                    orig_img = cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), cv2.IMREAD_COLOR)
                     if orig_img is not None:
                         h_orig, w_orig = orig_img.shape[:2]
                         # 获取YOLO处理时的图像尺寸
@@ -1584,7 +1726,8 @@ class PhotoProcessor:
                         h_orig_box = min(h_orig_box, h_orig - y_orig)
                         
                         # 裁剪鸟的区域（保存BGR版本供关键点/飞版/曝光使用）
-                        bird_crop_bgr = orig_img[y_orig:y_orig+h_orig_box, x_orig:x_orig+w_orig_box]
+                        # .copy() 断开对 orig_img 的 view 依赖，使 orig_img 可在 TOPIQ 后提前释放
+                        bird_crop_bgr = orig_img[y_orig:y_orig+h_orig_box, x_orig:x_orig+w_orig_box].copy()
                         
                         # 同样裁剪 mask (如果存在)
                         if bird_mask is not None:
@@ -1678,6 +1821,10 @@ class PhotoProcessor:
                         topiq = scorer.calculate_nima(filepath)
                 except Exception as e:
                     pass  # V3.3: 简化日志，静默 TOPIQ 计算失败
+                finally:
+                    # TOPIQ 计算后立即释放原图（bird_crop_bgr 已是独立 copy，不受影响）
+                    del orig_img
+                    orig_img = None
                 add_photo_stage('topiq', (time.time() - topiq_start) * 1000)
             # V3.8: 移除跳过日志，改用 all_keypoints_hidden 后跳过的情况会少很多
             
@@ -2035,11 +2182,22 @@ class PhotoProcessor:
                     
                     # BirdID 异步提交（2星及以上）
                     if self.settings.auto_identify and rating_value >= 2:
+                        _birdid_crop_pil = None
+                        if bird_crop_bgr is not None:
+                            try:
+                                from PIL import Image as _PILImage
+                                import cv2 as _cv2_birdid
+                                _birdid_crop_pil = _PILImage.fromarray(
+                                    _cv2_birdid.cvtColor(bird_crop_bgr, _cv2_birdid.COLOR_BGR2RGB)
+                                )
+                            except Exception:
+                                pass
                         submit_birdid_task(
                             original_prefix,
                             filepath,
                             birdid_title_targets,
-                            os.path.basename(target_file_path)
+                            os.path.basename(target_file_path),
+                            _birdid_crop_pil,
                         )
             else:
                 # V3.4: 纯 JPEG 文件（没有对应 RAW）
@@ -2059,11 +2217,22 @@ class PhotoProcessor:
                     })
                     # BirdID 异步提交（2星及以上）
                     if self.settings.auto_identify and rating_value >= 2:
+                        _birdid_crop_pil = None
+                        if bird_crop_bgr is not None:
+                            try:
+                                from PIL import Image as _PILImage
+                                import cv2 as _cv2_birdid
+                                _birdid_crop_pil = _PILImage.fromarray(
+                                    _cv2_birdid.cvtColor(bird_crop_bgr, _cv2_birdid.COLOR_BGR2RGB)
+                                )
+                            except Exception:
+                                pass
                         submit_birdid_task(
                             original_prefix,
                             filepath,
                             [target_file_path],
-                            os.path.basename(target_file_path)
+                            os.path.basename(target_file_path),
+                            _birdid_crop_pil,
                         )
 
             # V3.4: 以下操作对 RAW 和纯 JPEG 都执行
@@ -2128,7 +2297,29 @@ class PhotoProcessor:
                         self.star2_reasons[file_prefix] = 'both'
             
             self._perf_record_photo(photo_time_ms, photo_stage_ms, early_exit=False)
+            mark_resume_completed(original_prefix)
         
+        if self._should_stop():
+            if metadata_async_enabled and metadata_queue is not None:
+                try:
+                    metadata_queue.put_nowait(None)
+                except Exception:
+                    pass
+            if birdid_executor is not None:
+                try:
+                    birdid_executor.shutdown(wait=False, cancel_futures=True)
+                except TypeError:
+                    birdid_executor.shutdown(wait=False)
+                except Exception:
+                    pass
+            try:
+                inference_pool.shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                inference_pool.shutdown(wait=False)
+            except Exception:
+                pass
+            raise ProcessingCancelled("Processing cancelled")
+
         if yolo_prefetch_thread is not None:
             try:
                 yolo_prefetch_thread.join(timeout=30)
@@ -2449,8 +2640,7 @@ class PhotoProcessor:
             
             # Debug: show picked file paths
             for file_path in picked_files:
-                exists = os.path.exists(file_path)
-                self._log(f"    🔍 Picked: {os.path.basename(file_path)} (exists: {exists})")
+                pass  # picked file confirmed
             
             # 批量写入
             picked_batch = [{
@@ -2558,11 +2748,6 @@ class PhotoProcessor:
             folder_path = os.path.join(self.dir_path, folder_name)
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
-                # V4.0: Show clearer folder creation log
-                if os.path.sep in folder_name or '/' in folder_name:
-                    self._log(f"  📁 Created folder: {folder_name}/")
-                else:
-                    self._log(f"  📁 Created folder: {folder_name}/")
         
         # 移动文件
         moved_count = 0
@@ -2622,7 +2807,6 @@ class PhotoProcessor:
             with open(manifest_path, 'w', encoding='utf-8') as f:
                 json.dump(manifest, f, ensure_ascii=False, indent=2)
             self._log(f"  ✅ Moved {moved_count} photos")
-            self._log(f"  📋 Manifest: .superpicky_manifest.json")
         except Exception as e:
             self._log(f"  ⚠️  Manifest save failed: {e}", "warning")
     

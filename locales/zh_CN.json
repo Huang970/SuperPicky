@@ -30,7 +30,10 @@
     "background_mode_title": "后台模式",
     "background_mode_msg": "应用将进入后台模式\n\n• 识鸟服务继续在后台运行\n• Lightroom 插件可以正常使用\n• 再次打开应用可恢复界面\n\n提示：服务器内存占用约 250MB",
     "view_results": "查看结果",
-    "results_browser": "图片浏览器"
+    "results_browser": "图片浏览器",
+    "recent_dirs": "最近目录",
+    "recent_dirs_clear": "清除历史记录",
+    "recent_dirs_offline": "(脱机)"
   },
   "buttons": {
     "select_dir": "📁 选择照片目录",
@@ -134,7 +137,8 @@
     "files_restored": "已恢复文件: {count}",
     "exif_reset_count": "EXIF已重置: {count}",
     "ready_for_analysis": "可以开始新的分析了",
-    "reset_failed_log": "重置失败"
+    "reset_failed_log": "重置失败",
+    "dir_unavailable": "目录不可用，请确认移动硬盘已连接。"
   },
   "logs": {
     "reset_start": "🔄 开始重置目录",
@@ -414,9 +418,24 @@
     "yolo_loaded": "✅ YOLO检测模型已加载",
     "keypoint_loaded": "✅ 关键点模型已加载",
     "flight_loaded": "✅ 飞版检测模型已加载",
+    "iqa_loaded": "✅ 美学评分模型已加载",
     "birdid_loaded": "✅ 识鸟模型已加载",
-    "preload_complete": "🎉 所有模型预加载完成！\n",
+    "preload_complete": "🎉 所有模型预加载完成！",
+    "preload_complete_with_errors": "⚠️ 预加载完成，部分模型失败: {failed}",
     "preload_failed": "⚠️ 模型预加载失败: {error}"
+  },
+  "health": {
+    "disk_status": "📁 磁盘空间: 剩余 {free} GB / 共 {total} GB {space_icon}  写权限: {write_icon} {write_label}",
+    "writable": "可写",
+    "not_writable": "无写权限",
+    "disk_check_failed": "⚠️ 磁盘检查失败: {error}",
+    "ram_ok": "💾 可用内存: {free} GB ✅",
+    "ram_low": "⚠️ 可用内存仅 {free} GB，模型加载可能较慢",
+    "exiftool_error_title": "ExifTool 不可用",
+    "exiftool_error_msg": "无法启动 ExifTool，照片评分将无法写入 EXIF 元数据。\n\n错误信息：{error}\n\n请重新安装应用或检查软件完整性。",
+    "no_photos_title": "未找到照片",
+    "no_photos_msg": "目录中没有支持的照片文件（JPG / RAW / HEIF）：\n{directory}",
+    "models_still_loading": "⚠️ 模型仍在后台预加载，处理时首张照片可能稍慢"
   },
   "stats": {
     "total": "总计",
@@ -767,7 +786,8 @@
     "download_hint": "如需下载，请前往官网：",
     "mac_version": "⌘ Mac 版",
     "windows_version": "⊞ Windows 版",
-    "close": "关闭"
+    "close": "关闭",
+    "include_prerelease": "接收预发布版本提醒（Beta / RC）"
   },
   "about": {
     "window_title": "关于",
@@ -869,6 +889,9 @@
     "error_prefix": "错误: ",
     "stats_complete": "分析完成  |  {total} 张  |  {time_min:.1f} min",
     "stats_flying": "🔵 飞版: {count}",
+    "btn_screenshot": "截图识别",
+    "screenshot_hint": "请截图，完成后自动识别...",
+    "click_to_copy": "点击复制鸟名", 
     "stats_focus_precise": "🟢 精焦: {count}",
     "stats_species": "🦜 {count} 种: {names}"
   },
@@ -1003,6 +1026,7 @@
     "meta_focal": "焦距",
     "meta_confidence": "置信度",
     "meta_birdid_conf": "识鸟置信度",
+    "meta_filesize": "文件大小",
     "meta_filename": "文件名",
     "meta_datetime": "拍摄时间",
     "flying_yes": "是",

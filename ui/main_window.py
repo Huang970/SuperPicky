@@ -43,11 +43,11 @@ from ui.skill_level_dialog import SkillLevelDialog, SKILL_PRESETS, get_skill_lev
 class DropLineEdit(QLineEdit):
     """支持拖放目录的 QLineEdit"""
     pathDropped = Signal(str)  # 拖放目录后发射此信号
-    
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-    
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         """验证拖入的内容"""
         if event.mimeData().hasUrls():
@@ -58,7 +58,7 @@ class DropLineEdit(QLineEdit):
                     event.acceptProposedAction()
                     return
         event.ignore()
-    
+
     def dropEvent(self, event: QDropEvent):
         """处理拖放"""
         urls = event.mimeData().urls()
@@ -85,13 +85,15 @@ class WorkerSignals(QObject):
 class WorkerThread(threading.Thread):
     """处理线程"""
 
-    def __init__(self, dir_path, ui_settings, signals, i18n=None):
+    def __init__(self, dir_path, ui_settings, signals, i18n=None, resume=False):
         super().__init__(daemon=True)
         self.dir_path = dir_path
         self.ui_settings = ui_settings
         self.signals = signals
         self.i18n = i18n
+        self.resume = resume
         self._stop_event = threading.Event()
+        self._active_processor = None
         self.caffeinate_process = None
 
         self.stats = {
@@ -115,9 +117,20 @@ class WorkerThread(threading.Thread):
             self.process_files()
             self.signals.finished.emit(self.stats)
         except Exception as e:
-            self.signals.error.emit(str(e))
+            if e.__class__.__name__ == "ProcessingCancelled":
+                self.signals.log.emit("Processing cancelled.", "warning")
+            else:
+                self.signals.error.emit(str(e))
         finally:
             self._stop_caffeinate()
+
+    def request_stop(self):
+        self._stop_event.set()
+        if self._active_processor is not None:
+            try:
+                self._active_processor.request_stop()
+            except Exception:
+                pass
 
     def _start_caffeinate(self):
         """启动防休眠"""
@@ -192,10 +205,6 @@ class WorkerThread(threading.Thread):
                 birdid_settings_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'SuperPicky_Data')
             birdid_settings_path = os.path.join(birdid_settings_dir, 'birdid_dock_settings.json')
 
-            _dbg_msg = f"[DEBUG] Checking settings file: {birdid_settings_path}, exists: {os.path.exists(birdid_settings_path)}"
-            print(_dbg_msg)
-            _log_to_file(_dbg_msg, self.dir_path, file_only=True)
-            
             if os.path.exists(birdid_settings_path):
                 with open(birdid_settings_path, 'r', encoding='utf-8') as f:
                     birdid_settings = json.load(f)
@@ -237,17 +246,7 @@ class WorkerThread(threading.Thread):
                             match = re.search(r'\(([A-Z]{2}-[A-Z0-9]+)\)', selected_region)
                             if match:
                                 birdid_region_code = match.group(1)
-            _dbg_msg2 = (
-                f"[DEBUG] BirdID settings: auto_identify={birdid_auto_identify}, "
-                f"country={birdid_country_code}, region={birdid_region_code}, "
-                f"confidence={birdid_confidence_threshold}%"
-            )
-            print(_dbg_msg2)
-            _log_to_file(_dbg_msg2, self.dir_path, file_only=True)
         except Exception as e:
-            _dbg_err = f"[DEBUG] BirdID settings load failed: {e}"
-            print(_dbg_err)
-            _log_to_file(_dbg_err, self.dir_path, file_only=True)
             # BirdID 设置读取失败不影响主流程
             # 使用默认值
             birdid_use_ebird = True
@@ -307,8 +306,35 @@ class WorkerThread(threading.Thread):
                 f"  Metadata Mode      : {_adv.get_metadata_write_mode()}",
                 f"  Skill Level        : {_adv.skill_level}",
                 f"  Language           : {_adv.language or 'Auto'}",
-                "=" * 60,
             ])
+            try:
+                from tools.system_logger import collect_system_info as _collect_sys
+                _si = _collect_sys()
+                _sys_lines = [
+                    "[System]",
+                    f"  App Version        : {_si.get('app_version', '?')}",
+                    f"  Launch Mode        : {_si.get('launch_mode', '?')}",
+                    f"  OS                 : {_si.get('os', '?')} {_si.get('os_release', '')}",
+                ]
+                if 'macos_version' in _si:
+                    _sys_lines.append(f"  macOS              : {_si['macos_version']}")
+                _sys_lines += [
+                    f"  Machine            : {_si.get('machine', '?')}",
+                    f"  Python             : {_si.get('python_version', '?')}",
+                    f"  RAM Total          : {_si.get('ram_total_gb', '?')} GB",
+                    f"  RAM Free           : {_si.get('ram_available_gb', '?')} GB",
+                    f"  AI Device          : {_si.get('ai_device', '?')}",
+                ]
+                if 'gpu_name' in _si:
+                    _sys_lines.append(f"  GPU                : {_si['gpu_name']}")
+                if 'gpu_vram_gb' in _si:
+                    _sys_lines.append(f"  VRAM               : {_si['gpu_vram_gb']} GB")
+                if 'cuda_version' in _si:
+                    _sys_lines.append(f"  CUDA               : {_si['cuda_version']}")
+                _session_header = _session_header + "\n" + "\n".join(_sys_lines)
+            except Exception:
+                pass
+            _session_header = _session_header + "\n" + "=" * 60
         except Exception as _hdr_err:
             # 会话头生成失败时写一个最简版本，不阻断处理流程
             _session_header = "\n".join([
@@ -337,38 +363,173 @@ class WorkerThread(threading.Thread):
         callbacks = ProcessingCallbacks(
             log=log_callback,
             progress=progress_callback,
+            should_stop=self._stop_event.is_set,
             crop_preview=crop_preview_callback
         )
 
-        processor = PhotoProcessor(
-            dir_path=self.dir_path,
-            settings=settings,
-            callbacks=callbacks
-        )
+        # Detect batch mode: check for subdirectories with photos
+        from core.recursive_scanner import scan_recursive, has_photos
+        sub_dirs = scan_recursive(self.dir_path, max_depth=5)
 
-        # V4.0.5: 读取 keep_temp_files 配置，决定是否清理临时文件
-        from advanced_config import get_advanced_config
-        adv_config = get_advanced_config()
-        
-        result = processor.process(
-            organize_files=True,
-            cleanup_temp=not adv_config.keep_temp_files
-        )
+        if len(sub_dirs) <= 1:
+            # Single directory mode (original behavior)
+            processor = PhotoProcessor(
+                dir_path=self.dir_path,
+                settings=settings,
+                callbacks=callbacks
+            )
+            self._active_processor = processor
 
-        # V4.0.4: 连拍检测已移至 PhotoProcessor 内部
-        # 直接读取统计信息并显示
-        burst_groups = result.stats.get('burst_groups', 0)
-        burst_moved = result.stats.get('burst_moved', 0)
-        
-        if burst_groups > 0:
-            log_callback(self.i18n.t("logs.burst_complete", groups=burst_groups, moved=burst_moved), "success")
-        elif settings.detect_burst:
-            log_callback(self.i18n.t("logs.burst_none_detected"), "info")
+            from advanced_config import get_advanced_config
+            adv_config = get_advanced_config()
 
-        self.stats = result.stats
+            try:
+                result = processor.process(
+                    organize_files=True,
+                    cleanup_temp=not adv_config.keep_temp_files,
+                    resume=self.resume
+                )
+
+                burst_groups = result.stats.get('burst_groups', 0)
+                burst_moved = result.stats.get('burst_moved', 0)
+
+                if burst_groups > 0:
+                    log_callback(self.i18n.t("logs.burst_complete", groups=burst_groups, moved=burst_moved), "success")
+                elif settings.detect_burst:
+                    log_callback(self.i18n.t("logs.burst_none_detected"), "info")
+
+                self.stats = result.stats
+            finally:
+                self._active_processor = None
+        else:
+            # Batch mode: process each subdirectory
+            from advanced_config import get_advanced_config
+            adv_config = get_advanced_config()
+
+            log_callback(f"\n{'='*56}", "info")
+            log_callback(f"  \U0001f4c2 Batch mode: {len(sub_dirs)} directories detected", "info")
+            log_callback(f"{'='*56}", "info")
+
+            # Count total photos across all dirs for progress
+            from constants import IMAGE_EXTENSIONS
+            _photo_exts = set(e.lower() for e in IMAGE_EXTENSIONS)
+            total_all = 0
+            dir_photo_counts = {}
+            for d in sub_dirs:
+                count = 0
+                for f in os.listdir(d):
+                    if os.path.splitext(f)[1].lower() in _photo_exts:
+                        count += 1
+                dir_photo_counts[d] = count
+                total_all += count
+
+            processed_so_far = 0
+            aggregated = {
+                'total': 0, 'star_3': 0, 'picked': 0, 'star_2': 0,
+                'star_1': 0, 'star_0': 0, 'no_bird': 0,
+                'start_time': 0, 'end_time': 0, 'total_time': 0,
+                'flying': 0, 'focus_precise': 0, 'exposure_issue': 0,
+                'burst_groups': 0, 'burst_moved': 0,
+                'bird_species': [],
+            }
+            import time as _time
+            aggregated['start_time'] = _time.time()
+
+            for idx, sub_dir in enumerate(sub_dirs, 1):
+                rel = os.path.relpath(sub_dir, self.dir_path)
+                n_photos = dir_photo_counts.get(sub_dir, 0)
+                if n_photos == 0:
+                    continue
+
+                log_callback(f"\n{'_'*40}", "info")
+                log_callback(f"\U0001f4c1 [{idx}/{len(sub_dirs)}] {rel}/ ({n_photos} photos)", "info")
+                log_callback(f"{'_'*40}", "info")
+
+                # Wrap progress to map sub-dir progress to global progress
+                dir_base = processed_so_far
+                dir_count = n_photos
+
+                def make_progress_cb(base, count):
+                    def _progress(val):
+                        if total_all > 0:
+                            global_pct = (base + count * val / 100.0) / total_all * 100
+                            self.signals.progress.emit(int(global_pct))
+                    return _progress
+
+                sub_callbacks = ProcessingCallbacks(
+                    log=log_callback,
+                    progress=make_progress_cb(dir_base, dir_count),
+                    should_stop=self._stop_event.is_set,
+                    crop_preview=crop_preview_callback
+                )
+
+                processor = PhotoProcessor(
+                    dir_path=sub_dir,
+                    settings=settings,
+                    callbacks=sub_callbacks
+                )
+                self._active_processor = processor
+
+                try:
+                    result = processor.process(
+                        organize_files=True,
+                        cleanup_temp=not adv_config.keep_temp_files,
+                        resume=self.resume
+                    )
+                    s = result.stats
+                    for key in ('total', 'star_3', 'picked', 'star_2', 'star_1',
+                                'star_0', 'no_bird', 'flying', 'focus_precise',
+                                'exposure_issue', 'burst_groups', 'burst_moved'):
+                        aggregated[key] = aggregated.get(key, 0) + s.get(key, 0)
+                    aggregated['bird_species'].extend(s.get('bird_species', []))
+
+                    r3 = s.get('star_3', 0)
+                    r2 = s.get('star_2', 0)
+                    r1 = s.get('star_1', 0)
+                    r0 = s.get('star_0', 0)
+                    nb = s.get('no_bird', 0)
+                    tt = s.get('total_time', 0)
+                    log_callback(
+                        f"  \u2705 Done ({tt:.1f}s): "
+                        f"3\u2605={r3} 2\u2605={r2} 1\u2605={r1} 0\u2605={r0} no_bird={nb}",
+                        "success"
+                    )
+                except Exception as e:
+                    log_callback(f"  \u274c Error: {e}", "error")
+                finally:
+                    self._active_processor = None
+
+                processed_so_far += dir_count
+
+            aggregated['end_time'] = _time.time()
+            aggregated['total_time'] = aggregated['end_time'] - aggregated['start_time']
+            if aggregated['total'] > 0:
+                aggregated['avg_time'] = aggregated['total_time'] / aggregated['total']
+            else:
+                aggregated['avg_time'] = 0
+
+            # Deduplicate bird species
+            seen = set()
+            unique_species = []
+            for sp in aggregated['bird_species']:
+                key = str(sp)
+                if key not in seen:
+                    seen.add(key)
+                    unique_species.append(sp)
+            aggregated['bird_species'] = unique_species
+
+            log_callback(f"\n{'='*56}", "info")
+            log_callback(
+                f"  \U0001f4ca Batch complete: {len(sub_dirs)} dirs, "
+                f"{aggregated['total']} photos, {aggregated['total_time']:.1f}s",
+                "success"
+            )
+            log_callback(f"{'='*56}", "info")
+
+            self.stats = aggregated
 
         # ── 写会话结束摘要到日志文件 ──────────────────────────
-        _s = result.stats
+        _s = self.stats
         _total    = _s.get('total', 0)
         _star_3   = _s.get('star_3', 0)
         _star_2   = _s.get('star_2', 0)
@@ -502,6 +663,15 @@ class SuperPickyMainWindow(QMainWindow):
         self._setup_system_tray()
         self._really_quit = False  # 标记是否真正退出
         self._background_mode = False  # V4.0: 标记是否进入后台模式（不停止服务器）
+        self._suppress_results_browser_once = False
+        self._resume_prompt_handled = False
+        
+        # osk flex,countly.com 63fda2e
+        self._startup_prompts_ran = False
+        self._preload_done = False  # 模型预加载是否完成
+        
+        # V4.2: 使用默认窗口大小，不最大化
+        # self.showMaximized()  # 注释掉这行，使用默认大小
         
         # V4.3: 首次运行时显示水平选择对话框（延迟500ms，确保UI已完成渲染）
         if self.config.is_first_run:
@@ -509,9 +679,6 @@ class SuperPickyMainWindow(QMainWindow):
         else:
             # 非首次运行：根据保存的水平设置滑块
             self._apply_skill_level_thresholds(self.config.skill_level)
-        
-        # V4.2: 使用默认窗口大小，不最大化
-        # self.showMaximized()  # 注释掉这行，使用默认大小
 
 
 
@@ -566,8 +733,6 @@ class SuperPickyMainWindow(QMainWindow):
 
         # 识鸟菜单
         birdid_menu = menubar.addMenu(self.i18n.t("menu.birdid"))
-        
-
 
         # 识鸟面板（可勾选显示/隐藏）
         self.birdid_dock_action = QAction(self.i18n.t("menu.toggle_dock"), self)
@@ -575,8 +740,10 @@ class SuperPickyMainWindow(QMainWindow):
         self.birdid_dock_action.setChecked(True)
         self.birdid_dock_action.triggered.connect(self._toggle_birdid_dock)
         birdid_menu.addAction(self.birdid_dock_action)
-        
 
+        # ── 最近目录子菜单 ──────────────────────────────────
+        self._recent_menu = menubar.addMenu(self.i18n.t("menu.recent_dirs"))
+        self._refresh_recent_menu()
 
         # 设置菜单
         settings_menu = menubar.addMenu(self.i18n.t("menu.settings_menu"))
@@ -626,6 +793,38 @@ class SuperPickyMainWindow(QMainWindow):
         about_action = QAction(self.i18n.t("menu.about"), self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
+
+    def _refresh_recent_menu(self):
+        """重建「最近目录」子菜单内容（每次选目录后调用）。"""
+        if not hasattr(self, '_recent_menu'):
+            return
+        self._recent_menu.clear()
+        dirs = self.config.get_recent_directories()
+        offline_prefix = self.i18n.t("menu.recent_dirs_offline")  # "(脱机)" or "(Offline)"
+        if dirs:
+            for d in dirs:
+                available = os.path.isdir(d)
+                label = d if available else f"{offline_prefix} {d}"
+                action = QAction(label, self)
+                if available:
+                    action.triggered.connect(lambda checked=False, path=d: self._handle_directory_selection(path))
+                else:
+                    action.triggered.connect(
+                        lambda checked=False, msg=self.i18n.t("messages.dir_unavailable"):
+                        self._show_message(self.i18n.t("messages.warning"), msg, "warning")
+                    )
+                self._recent_menu.addAction(action)
+            self._recent_menu.addSeparator()
+        # 清除历史按钮
+        clear_action = QAction(self.i18n.t("menu.recent_dirs_clear"), self)
+        clear_action.triggered.connect(self._clear_recent_directories)
+        self._recent_menu.addAction(clear_action)
+
+    def _clear_recent_directories(self):
+        """清空最近目录历史。"""
+        self.config.config["recent_directories"] = []
+        self.config.save()
+        self._refresh_recent_menu()
 
     def _setup_ui(self):
         """设置主 UI"""
@@ -782,7 +981,27 @@ class SuperPickyMainWindow(QMainWindow):
         无论通过 X按鈕 / Cmd+Q / 托盘退出，都会经过此处。
         Mac 和 Windows 均适用。
         """
+        if self.worker and self.worker.is_alive():
+            try:
+                self.worker.request_stop()
+                self.worker.join(timeout=5)
+            except Exception:
+                pass
+        if hasattr(self, '_results_browser') and self._results_browser:
+            try:
+                self._results_browser.cleanup()
+            except Exception as e:
+                print(f"⚠️  Results browser cleanup failed: {e}")
         self._stop_birdid_server()        # 停止 Flask/BirdID 进程
+        
+        # 清理 ExifTool 进程
+        try:
+            from tools.exiftool_manager import get_exiftool_manager
+            exiftool_mgr = get_exiftool_manager()
+            exiftool_mgr.shutdown()
+        except Exception as e:
+            print(f"⚠️  ExifTool cleanup failed: {e}")
+            
         if hasattr(self, 'tray_icon') and self.tray_icon:
             self.tray_icon.hide()         # 清托盘图标（备用，_quit_app 已调过一次也无害）
 
@@ -928,16 +1147,16 @@ class SuperPickyMainWindow(QMainWindow):
 
     def _create_directory_section(self, parent_layout):
         """创建目录选择区域"""
-        # 输入区域
         dir_layout = QHBoxLayout()
         dir_layout.setSpacing(8)
 
         # V3.9: 使用支持拖放的 DropLineEdit
         self.dir_input = DropLineEdit()
+        self.dir_input.clear()  # 防止 macOS 窗口状态恢复保留残留内容导致启动时误触发验证
         self.dir_input.setPlaceholderText(self.i18n.t("labels.dir_placeholder"))
         self.dir_input.returnPressed.connect(self._on_path_entered)
         self.dir_input.editingFinished.connect(self._on_path_entered)  # V3.9: 失焦时也验证
-        self.dir_input.pathDropped.connect(self._on_path_dropped)  # V3.9: 拖放目录
+        self.dir_input.pathDropped.connect(self._on_path_dropped)     # V3.9: 拖放目录
         dir_layout.addWidget(self.dir_input, 1)
 
         browse_btn = QPushButton(self.i18n.t("labels.browse"))
@@ -1266,6 +1485,8 @@ class SuperPickyMainWindow(QMainWindow):
                 self.i18n.t("errors.error_title"),
                 self.i18n.t("errors.dir_not_exist", directory=directory)
             )
+            # 清空无效路径，防止下次启动时 macOS 状态恢复重复触发此错误
+            self.dir_input.clear()
 
     @Slot()
     def _browse_directory(self):
@@ -1296,12 +1517,91 @@ class SuperPickyMainWindow(QMainWindow):
         self.dir_input.setText(directory)
 
         self._log(self.i18n.t("messages.dir_selected", directory=directory))
+        self._check_directory_health(directory)
+
+        # 写入最近目录历史并刷新菜单
+        self.config.add_recent_directory(directory)
+        self._refresh_recent_menu()
 
         # 状态条 + 按钮由 _check_report_csv 根据是否有历史数据决定
         # 重置弹窗移到「重新处理」按钮点击时再询问（_reset_directory 保留确认逻辑）
+        self._resume_prompt_handled = False
         self._check_report_csv()
+        self._maybe_prompt_resume_after_selection()
+
+    def _check_directory_health(self, directory: str):
+        """检查目标目录的磁盘空间和写权限，结果输出到 UI 日志。"""
+        import shutil, os
+        try:
+            usage = shutil.disk_usage(directory)
+            free_gb = usage.free / (1024 ** 3)
+            total_gb = usage.total / (1024 ** 3)
+
+            # 写权限检查（跨平台：os.access + 实际写测试）
+            can_write = os.access(directory, os.W_OK)
+            if can_write:
+                # 部分网络盘 os.access 返回 True 但实际不可写，做一次实写验证
+                try:
+                    test_path = os.path.join(directory, ".superpicky_write_test")
+                    with open(test_path, "w") as _f:
+                        _f.write("")
+                    os.remove(test_path)
+                except Exception:
+                    can_write = False
+
+            write_icon = "✅" if can_write else "❌"
+            write_label = self.i18n.t("health.writable") if can_write else self.i18n.t("health.not_writable")
+
+            if free_gb < 1.0:
+                space_icon = "❌"
+                level = "warning"
+            elif free_gb < 5.0:
+                space_icon = "⚠️"
+                level = "warning"
+            else:
+                space_icon = "✅"
+                level = "info"
+
+            self._log(
+                self.i18n.t(
+                    "health.disk_status",
+                    free=f"{free_gb:.1f}",
+                    total=f"{total_gb:.0f}",
+                    space_icon=space_icon,
+                    write_icon=write_icon,
+                    write_label=write_label,
+                ),
+                level,
+            )
+        except Exception as e:
+            self._log(self.i18n.t("health.disk_check_failed", error=str(e)), "warning")
 
     # ========== 状态条 + 结果浏览器辅助 ==========
+
+    def _maybe_prompt_resume_after_selection(self):
+        if self._resume_prompt_handled or not self.directory_path:
+            return
+        self._resume_prompt_handled = True
+        try:
+            from tools.resume_state import ResumeStateManager
+            resume_state = ResumeStateManager(self.directory_path)
+            if not resume_state.exists():
+                return
+            resume_reply = StyledMessageBox.question(
+                self,
+                "检测到未完成任务",
+                "这个目录存在未完成的处理记录。选择“继续处理”会从上次中断的位置继续；选择“重新开始”会先恢复目录，再重新处理。",
+                yes_text="继续处理",
+                no_text="重新开始"
+            )
+            if resume_reply == StyledMessageBox.Yes:
+                self._start_processing()
+            else:
+                resume_state.clear()
+                self._suppress_results_browser_once = True
+                self._quick_restore_directory()
+        except Exception as resume_err:
+            self._log(f"⚠️ 恢复状态检查失败: {resume_err}", "warning")
 
     def _load_result_counts(self) -> dict:
         """从 report.db 读取评分统计，供状态条显示。"""
@@ -1496,6 +1796,15 @@ class SuperPickyMainWindow(QMainWindow):
         if not self.directory_path:
             return
 
+        try:
+            from tools.resume_state import ResumeStateManager
+            if ResumeStateManager(self.directory_path).exists():
+                self._update_status_banner("ready")
+                self._update_action_buttons("ready")
+                return
+        except Exception:
+            pass
+
         report_path = os.path.join(self.directory_path, ".superpicky", "report.db")
         if os.path.exists(report_path):
             counts = self._load_result_counts()
@@ -1590,6 +1899,69 @@ class SuperPickyMainWindow(QMainWindow):
         if reply != StyledMessageBox.Yes:
             return
 
+        resume_processing = False
+        try:
+            from tools.resume_state import ResumeStateManager
+            resume_state = ResumeStateManager(self.directory_path)
+            if resume_state.exists() and self._resume_prompt_handled:
+                resume_processing = True
+            elif resume_state.exists():
+                resume_reply = StyledMessageBox.question(
+                    self,
+                    "检测到未完成任务",
+                    "这个目录存在未完成的处理记录。选择“继续处理”会从上次中断的位置继续；选择“重新开始”会先恢复目录，再重新处理。",
+                    yes_text="继续处理",
+                    no_text="重新开始"
+                )
+                if resume_reply == StyledMessageBox.Yes:
+                    resume_processing = True
+                else:
+                    resume_state.clear()
+                    self._suppress_results_browser_once = True
+                    self._quick_restore_directory()
+                    return
+        except Exception as resume_err:
+            self._log(f"⚠️ 恢复状态检查失败: {resume_err}", "warning")
+        finally:
+            self._resume_prompt_handled = False
+
+        # ── 开始前自检 ──────────────────────────────────────────
+        # 1. ExifTool 健康检查（阻断型）
+        try:
+            from tools.exiftool_manager import get_exiftool_manager
+            get_exiftool_manager()  # 触发 _verify_exiftool()，失败会 raise RuntimeError
+        except Exception as _et_err:
+            StyledMessageBox.warning(
+                self,
+                self.i18n.t("health.exiftool_error_title"),
+                self.i18n.t("health.exiftool_error_msg", error=str(_et_err)),
+            )
+            return
+
+        # 2. 照片数量预扫描（阻断型）
+        try:
+            import os as _os
+            from constants import IMAGE_EXTENSIONS
+            _ext_set = set(e.lower() for e in IMAGE_EXTENSIONS)
+            _photo_count = sum(
+                1 for _e in _os.scandir(self.directory_path)
+                if _e.is_file() and _os.path.splitext(_e.name)[1].lower() in _ext_set
+            )
+            if _photo_count == 0:
+                StyledMessageBox.warning(
+                    self,
+                    self.i18n.t("health.no_photos_title"),
+                    self.i18n.t("health.no_photos_msg", directory=self.directory_path),
+                )
+                return
+        except Exception:
+            pass  # 扫描失败不阻断，交给 worker 处理
+
+        # 3. 模型预加载状态提示（非阻断）
+        if not self._preload_done:
+            self._log(self.i18n.t("health.models_still_loading"), "warning")
+        # ────────────────────────────────────────────────────────
+
         # 清空日志和进度
         self.log_text.clear()
         self.progress_bar.setValue(0)
@@ -1631,7 +2003,8 @@ class SuperPickyMainWindow(QMainWindow):
             self.directory_path,
             ui_settings,
             self.worker_signals,
-            self.i18n
+            self.i18n,
+            resume=resume_processing
         )
         self.worker.start()
 
@@ -1777,8 +2150,41 @@ class SuperPickyMainWindow(QMainWindow):
                 import shutil
 
                 exiftool_mgr = get_exiftool_manager()
-                
-                # V4.0.5: 先清理所有子目录（burst_XXX、鸟种目录等）
+
+                # Batch mode: reset processed subdirectories first (deepest first)
+                from core.recursive_scanner import is_processed
+                sub_dirs_to_reset = []
+                for root_d, subdirs, files in os.walk(directory_path):
+                    subdirs[:] = [d for d in subdirs if not d.startswith('.')]
+                    from constants import RATING_FOLDER_NAMES, RATING_FOLDER_NAMES_EN
+                    star_names = set(RATING_FOLDER_NAMES.values()) | set(RATING_FOLDER_NAMES_EN.values())
+                    subdirs[:] = [d for d in subdirs if d not in star_names and not d.startswith('burst_')]
+                    for d in subdirs:
+                        full = os.path.join(root_d, d)
+                        if is_processed(full):
+                            sub_dirs_to_reset.append(full)
+
+                if sub_dirs_to_reset:
+                    # Reset deepest first
+                    sub_dirs_to_reset.sort(key=lambda p: p.count(os.sep), reverse=True)
+                    emit_log(f"\n\U0001f4c2 Batch reset: {len(sub_dirs_to_reset)} subdirectories")
+                    for idx, sub_dir in enumerate(sub_dirs_to_reset, 1):
+                        rel = os.path.relpath(sub_dir, directory_path)
+                        emit_log(f"\n\U0001f504 [{idx}/{len(sub_dirs_to_reset)}] {rel}/")
+                        try:
+                            # Reuse CLI reset logic
+                            class _ResetArgs:
+                                pass
+                            _args = _ResetArgs()
+                            _args.directory = sub_dir
+                            _args.yes = True
+                            from superpicky_cli import cmd_reset as _cli_reset
+                            _cli_reset(_args)
+                            emit_log(f"  \u2705 {rel}/ reset done")
+                        except Exception as e:
+                            emit_log(f"  \u274c {rel}/ reset failed: {e}")
+
+                # Now reset the root directory
                 emit_log(i18n.t("logs.reset_step0"))
                 rating_dirs = ['3star_excellent', '2star_good', '1star_average', '0star_reject',
                                '3星_优选', '2星_良好', '1星_普通', '0星_放弃']
@@ -1956,6 +2362,11 @@ class SuperPickyMainWindow(QMainWindow):
         else:
             self._update_status(self.i18n.t("labels.error"), COLORS['error'])
             self._log(self.i18n.t("messages.reset_failed_log"))
+        if self._suppress_results_browser_once:
+            self._suppress_results_browser_once = False
+            self._update_status_banner("ready")
+            self._update_action_buttons("ready")
+            return
 
         self._check_report_csv()
 
@@ -2312,9 +2723,10 @@ class SuperPickyMainWindow(QMainWindow):
             )
 
             if reply == StyledMessageBox.No:  # 用户点击"是"退出
-                self.worker._stop_event.set()
+                self.worker.request_stop()
                 self.worker._stop_caffeinate()  # V3.8.1: 确保终止 caffeinate 进程
                 self._stop_birdid_server()  # V4.0: 停止识鸟 API 服务
+                self._quit_app()
                 event.accept()
             else:
                 event.ignore()
@@ -2327,40 +2739,118 @@ class SuperPickyMainWindow(QMainWindow):
     def _preload_all_models(self):
         """后台预加载所有AI模型（不阻塞UI）"""
         import threading
-        
-        def preload_task():
+
+        def _emit_and_log(msg, level="info"):
+            """同时发送到 UI 和 superpicky.log"""
+            self.log_signal.emit(msg, level)
             try:
-                # 使用信号发送日志，确保线程安全
-                self.log_signal.emit(self.i18n.t("preload.preloading_models"), "info")
-                
-                # 1. YOLO 检测模型 - 使用GUI日志回调
+                from tools.utils import log_message
+                from tools.utils import get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message(msg, d, file_only=True)
+            except Exception:
+                pass
+
+        def preload_task():
+            # RAM 检查（psutil 可选依赖，缺失时跳过）
+            try:
+                import psutil
+                vm = psutil.virtual_memory()
+                free_gb = vm.available / (1024 ** 3)
+                if free_gb < 4.0:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_low", free=f"{free_gb:.1f}"),
+                        "warning",
+                    )
+                else:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_ok", free=f"{free_gb:.1f}"),
+                        "info",
+                    )
+            except ImportError:
+                pass  # psutil 未安装，跳过 RAM 检查
+
+            _emit_and_log(self.i18n.t("preload.preloading_models"), "info")
+            results = []
+
+            # 1. YOLO 检测模型
+            try:
                 from ai_model import load_yolo_model
                 load_yolo_model(log_callback=lambda msg, tag="info": self.log_signal.emit(msg, tag))
                 self.log_signal.emit(self.i18n.t("preload.yolo_loaded"), "success")
-                
-                # 2. 关键点检测模型
-                from core.keypoint_detector import get_keypoint_detector
-                kp_detector = get_keypoint_detector()
-                kp_detector.load_model()
-                self.log_signal.emit(self.i18n.t("preload.keypoint_loaded"), "success")
-                
-                # 3. 飞版检测模型
-                from core.flight_detector import get_flight_detector
-                flight_detector = get_flight_detector()
-                flight_detector.load_model()
-                self.log_signal.emit(self.i18n.t("preload.flight_loaded"), "success")
-                
-                # 4. 识鸟模型
-                from birdid.bird_identifier import get_bird_model
-                get_bird_model()
-                self.log_signal.emit(self.i18n.t("preload.birdid_loaded"), "success")
-                
-                self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
-                
+                results.append(("YOLO", True, None))
             except Exception as e:
-                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=str(e)), "warning")
-        
-        # 在后台线程中执行，不阻塞UI
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"YOLO: {e}"), "warning")
+                results.append(("YOLO", False, str(e)))
+
+            # 2. 关键点检测模型
+            try:
+                from core.keypoint_detector import get_keypoint_detector
+                get_keypoint_detector().load_model()
+                self.log_signal.emit(self.i18n.t("preload.keypoint_loaded"), "success")
+                results.append(("Keypoint", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Keypoint: {e}"), "warning")
+                results.append(("Keypoint", False, str(e)))
+
+            # 3. 飞版检测模型
+            try:
+                from core.flight_detector import get_flight_detector
+                get_flight_detector().load_model()
+                self.log_signal.emit(self.i18n.t("preload.flight_loaded"), "success")
+                results.append(("Flight", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Flight: {e}"), "warning")
+                results.append(("Flight", False, str(e)))
+
+            # 4. IQA/TOPIQ 美学评分模型
+            try:
+                from config import get_best_device
+                from iqa_scorer import get_iqa_scorer
+                get_iqa_scorer(device=get_best_device().type)
+                self.log_signal.emit(self.i18n.t("preload.iqa_loaded", fallback="✅ 美学评分模型已加载"), "success")
+                results.append(("IQA", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"IQA: {e}"), "warning")
+                results.append(("IQA", False, str(e)))
+
+            # 5. 识鸟模型
+            try:
+                from birdid.bird_identifier import get_classifier
+                get_classifier()
+                self.log_signal.emit(self.i18n.t("preload.birdid_loaded"), "success")
+                results.append(("BirdID", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"BirdID: {e}"), "warning")
+                results.append(("BirdID", False, str(e)))
+
+            # 汇总：GUI 只显示一行结论，详情写入日志文件
+            ok_names = [name for name, s, _ in results if s]
+            fail_items = [(name, err) for name, s, err in results if not s]
+            summary_lines = ["[Preload Summary]"]
+            for name in ok_names:
+                summary_lines.append(f"  ✅ {name}")
+            for name, err in fail_items:
+                summary_lines.append(f"  ❌ {name}: {err}")
+            try:
+                from tools.utils import log_message, get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message("\n".join(summary_lines), d, file_only=True)
+            except Exception:
+                pass
+
+            if not fail_items:
+                self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
+            else:
+                failed_str = ", ".join(name for name, _ in fail_items)
+                self.log_signal.emit(
+                    self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
+                    "warning"
+                )
+            self._preload_done = True
+
         thread = threading.Thread(target=preload_task, daemon=True)
         thread.start()
 
@@ -2380,15 +2870,22 @@ class SuperPickyMainWindow(QMainWindow):
         def _do_check():
             try:
                 from tools.update_checker import UpdateChecker
-                checker = UpdateChecker()  # 使用 update_checker.CURRENT_VERSION
-                has_update, update_info = checker.check_for_updates()
-                print(f"[DEBUG] Update check done: has_update={has_update}, silent={silent}")
-                
+                from advanced_config import get_advanced_config as _get_cfg
+                _cfg = _get_cfg()
+                checker = UpdateChecker()
+                has_update, update_info = checker.check_for_updates(
+                    include_prerelease=_cfg.include_prerelease
+                )
                 # 静默模式下，只有有更新时才弹窗
                 if silent and not has_update:
-                    print("[DEBUG] Silent mode, no update, skipping dialog")
                     return
-                    
+
+                # 静默模式：跳过用户已选择忽略的版本
+                if silent and has_update and update_info:
+                    latest = update_info.get('version', '')
+                    if latest and latest == _cfg.ignored_update_version:
+                        return
+
                 # 使用信号发送到主线程
                 self._update_signals.update_check_done.emit(has_update, update_info)
             except Exception as e:
@@ -2407,7 +2904,6 @@ class SuperPickyMainWindow(QMainWindow):
     def _show_update_result_dialog(self, has_update: bool, update_info):
         """显示更新检测结果对话框"""
         try:
-            print("[DEBUG] _show_update_result_dialog 开始执行")
             from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
             import webbrowser
             
@@ -2537,11 +3033,53 @@ class SuperPickyMainWindow(QMainWindow):
                 layout.addWidget(btn_frame)
             
             layout.addSpacing(8)
-            
-            # 关闭按钮
+
+            # include_prerelease 勾选框（仅有更新时显示）
+            if has_update:
+                from PySide6.QtWidgets import QCheckBox
+                from advanced_config import get_advanced_config as _get_cfg
+                _cfg = _get_cfg()
+                prerelease_cb = QCheckBox(self.i18n.t("update.include_prerelease"))
+                prerelease_cb.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 12px;")
+                prerelease_cb.setChecked(_cfg.include_prerelease)
+                def _on_prerelease_toggled(checked):
+                    _c = _get_cfg()
+                    _c.set_include_prerelease(checked)
+                    _c.save()
+                prerelease_cb.toggled.connect(_on_prerelease_toggled)
+                layout.addWidget(prerelease_cb)
+                layout.addSpacing(4)
+
+            # 关闭 / 跳过此版本 按钮行
             close_layout = QHBoxLayout()
             close_layout.addStretch()
-            
+
+            if has_update and update_info:
+                skip_btn = QPushButton(self.i18n.t("update.skip_version"))
+                skip_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {COLORS['bg_card']};
+                        border: 1px solid {COLORS['border']};
+                        color: {COLORS['text_muted']};
+                        border-radius: 6px;
+                        padding: 8px 16px;
+                        font-size: 13px;
+                    }}
+                    QPushButton:hover {{
+                        border-color: {COLORS['text_muted']};
+                        color: {COLORS['text_secondary']};
+                    }}
+                """)
+                def _on_skip():
+                    from advanced_config import get_advanced_config as _get_cfg
+                    _cfg = _get_cfg()
+                    _cfg.set_ignored_update_version(update_info.get('version', ''))
+                    _cfg.save()
+                    dialog.accept()
+                skip_btn.clicked.connect(_on_skip)
+                close_layout.addWidget(skip_btn)
+                close_layout.addSpacing(8)
+
             close_btn = QPushButton(self.i18n.t("update.close"))
             close_btn.setStyleSheet(f"""
                 QPushButton {{
@@ -2559,12 +3097,10 @@ class SuperPickyMainWindow(QMainWindow):
             """)
             close_btn.clicked.connect(dialog.accept)
             close_layout.addWidget(close_btn)
-            
+
             layout.addLayout(close_layout)
-            
-            print("[DEBUG] 即将显示弹窗")
+
             dialog.exec()
-            print("[DEBUG] 弹窗已关闭")
             
         except Exception as e:
             import traceback
@@ -2584,6 +3120,17 @@ class SuperPickyMainWindow(QMainWindow):
         dialog = SkillLevelDialog(self.i18n, self)
         dialog.level_selected.connect(self._on_skill_level_selected)
         dialog.exec()
+
+    def run_startup_prompts(self):
+        """在启动统计同意流程结束后继续启动期弹窗/预设应用。"""
+        if self._startup_prompts_ran:
+            return
+
+        self._startup_prompts_ran = True
+        if self.config.is_first_run:
+            self._show_first_run_skill_level_dialog()
+        else:
+            self._apply_skill_level_thresholds(self.config.skill_level)
     
     def _on_skill_level_selected(self, level_key: str):
         """处理水平选择"""

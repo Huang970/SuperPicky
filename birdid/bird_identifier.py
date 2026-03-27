@@ -17,26 +17,11 @@ import os
 import sys
 from typing import Optional, List, Dict, Tuple, Set
 from tools.i18n import t as _t
+from config import get_best_device
 
 # ==================== 设备配置 ====================
-def get_classifier_device():
-    """获取分类器的最佳设备"""
-    try:
-        # 检查 MPS (Apple GPU)
-        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            return torch.device("mps")
-        
-        # 检查 CUDA (NVIDIA GPU)
-        if torch.cuda.is_available():
-            return torch.device("cuda")
-        
-        # 默认使用 CPU
-        return torch.device("cpu")
-    except Exception:
-        # 如果 torch 导入失败或其他异常，回退到 CPU
-        return torch.device("cpu")
 
-CLASSIFIER_DEVICE = get_classifier_device()
+CLASSIFIER_DEVICE = get_best_device()
 
 # ==================== 可选依赖检测 ====================
 
@@ -833,19 +818,21 @@ def identify_bird(
     country_code: str = None,
     region_code: str = None,
     top_k: int = 5,
-    name_format: str = None
+    name_format: str = None,
+    preloaded_crop=None,  # PIL Image，主流水线已裁剪好时传入，跳过重复 YOLO
 ) -> Dict:
     """
     端到端鸟类识别
 
     Args:
-        image_path: 图像路径
-        use_yolo: 是否使用 YOLO 裁剪
+        image_path: 图像路径（仍用于 GPS 提取）
+        use_yolo: 是否使用 YOLO 裁剪（preloaded_crop 存在时忽略）
         use_gps: 是否使用 GPS 自动检测区域
         use_ebird: 是否启用 eBird 区域过滤
         country_code: 手动指定国家代码（如 "AU"）
         region_code: 手动指定区域代码（如 "AU-SA"）
         top_k: 返回前 K 个结果
+        preloaded_crop: 预裁剪的鸟类区域 PIL Image，由调用方传入时跳过 YOLO
 
     Returns:
         识别结果字典
@@ -861,13 +848,20 @@ def identify_bird(
     }
 
     try:
-        # 加载图像
-        image = load_image(image_path)
+        # 若调用方已提供裁剪好的鸟类区域，直接使用，跳过图像加载和 YOLO
+        if preloaded_crop is not None:
+            image = preloaded_crop
+            is_yolo_cropped = True
+            result['yolo_info'] = {'preloaded': True}
+        else:
+            # 加载图像
+            image = load_image(image_path)
 
-        # YOLO 裁剪
-        is_yolo_cropped = False
+        # YOLO 裁剪（preloaded_crop 存在时已跳过）
+        if preloaded_crop is None:
+            is_yolo_cropped = False
         print(f"[YOLO] use_yolo={use_yolo}, YOLO_AVAILABLE={YOLO_AVAILABLE}")
-        if use_yolo and YOLO_AVAILABLE:
+        if preloaded_crop is None and use_yolo and YOLO_AVAILABLE:
             width, height = image.size
             print(f"[YOLO] image size: {width}x{height}")
             if max(width, height) > 640:

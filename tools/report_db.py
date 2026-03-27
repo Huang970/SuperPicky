@@ -21,7 +21,7 @@ from .file_utils import ensure_hidden_directory
 
 
 # Schema 版本，用于未来升级
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 # 所有列定义（有序），用于 CREATE TABLE 和数据验证
 PHOTO_COLUMNS = [
@@ -81,6 +81,10 @@ PHOTO_COLUMNS = [
     ("temp_jpeg_path",   "TEXT", None),
     ("debug_crop_path",  "TEXT", None),   # 裁切鸟+mask (crop_debug/)
     ("yolo_debug_path",  "TEXT", None),   # 全图+YOLO框 (yolo_debug/)
+    
+    # V5: 连拍分组
+    ("burst_id",         "INTEGER", None),
+    ("burst_position",   "INTEGER", None),
     
     ("created_at",    "TEXT", None),
     ("updated_at",    "TEXT", None),
@@ -278,6 +282,27 @@ class ReportDB:
                 current_version = "4"
                 print("✅ Database schema upgraded to v4")
 
+            # ----------------------------------------------------------------------
+            #  Upgrade: v4 -> v5 (Burst id and position)
+            # ----------------------------------------------------------------------
+            if current_version == "4":
+                print("🔄 Upgrading database schema from v4 to v5...")
+                new_columns_v5 = [
+                    ("burst_id", "INTEGER"),
+                    ("burst_position", "INTEGER"),
+                ]
+                with self._conn:
+                    for col_name, col_type in new_columns_v5:
+                        try:
+                            self._conn.execute(
+                                f"ALTER TABLE photos ADD COLUMN {col_name} {col_type}"
+                            )
+                        except sqlite3.OperationalError:
+                            pass  # 列已存在，跳过
+                    self._update_schema_version("5")
+                current_version = "5"
+                print("✅ Database schema upgraded to v5")
+
     def _update_schema_version(self, version):
         """更新数据库中的版本号（由调用方负责提交事务）"""
         with self._lock:
@@ -433,12 +458,13 @@ class ReportDB:
             )
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_distinct_species(self, use_en: bool = False) -> List[str]:
+    def get_distinct_species(self, use_en: bool = False, ratings: list = None) -> List[str]:
         """
         获取数据库中去重后的鸟种名称列表（用于结果浏览器筛选下拉框）。
 
         Args:
             use_en: True 使用英文鸟种列，False 使用中文鸟种列
+            ratings: 若提供，只返回在这些星级下有照片的鸟种
 
         Returns:
             鸟种名称列表（已去重、去空值）
@@ -447,15 +473,25 @@ class ReportDB:
         assert column in {"bird_species_en", "bird_species_cn"}, f"Invalid column: {column}"
         order_clause = f"{column} COLLATE NOCASE" if use_en else column
 
+        where_clauses = [
+            f"{column} IS NOT NULL",
+            f"TRIM({column}) != ''",
+            "rating != -1",
+        ]
+        params: List[Any] = []
+
+        if isinstance(ratings, list):
+            valid = [r for r in ratings if r != -1]
+            if valid:
+                placeholders = ", ".join(["?"] * len(valid))
+                where_clauses.append(f"rating IN ({placeholders})")
+                params.extend(valid)
+
+        where_sql = " AND ".join(where_clauses)
         with self._lock:
             cursor = self._conn.execute(
-                f"""
-                SELECT DISTINCT {column}
-                FROM photos
-                WHERE {column} IS NOT NULL
-                  AND TRIM({column}) != ''
-                ORDER BY {order_clause}
-                """
+                f"SELECT DISTINCT {column} FROM photos WHERE {where_sql} ORDER BY {order_clause}",
+                params
             )
             return [row[0] for row in cursor.fetchall()]
 
@@ -476,13 +512,14 @@ class ReportDB:
         where_clauses = []
         params: List[Any] = []
 
-        # 永远排除无鸟记录（rating=-1），即使前端意外传入也过滤掉
-        where_clauses.append("rating != -1")
-
         ratings = filters.get("ratings")
+        requesting_nobird = isinstance(ratings, list) and -1 in ratings
+
+        # 只有未明确请求无鸟照片时才排除 rating=-1
+        if not requesting_nobird:
+            where_clauses.append("rating != -1")
+
         if isinstance(ratings, list):
-            # 过滤掉 -1（以防万一）
-            ratings = [r for r in ratings if r != -1]
             if not ratings:
                 return []
             placeholders = ", ".join(["?"] * len(ratings))
@@ -555,9 +592,9 @@ class ReportDB:
             if picked_only and results:
                 # 按 topiq+sharpness 选出 top 25%（选片逻辑不变）
                 results.sort(key=lambda x: (
-                    x.get("adj_topiq", x.get("nima_score", -1e99)),
-                    x.get("adj_sharpness", x.get("head_sharp", -1e99)),
-                    x.get("filename", "")
+                    x.get("adj_topiq") or x.get("nima_score") or -1e99,
+                    x.get("adj_sharpness") or x.get("head_sharp") or -1e99,
+                    x.get("filename") or ""
                 ), reverse=True)
                 num_to_keep = max(1, int(len(results) * 0.25))
                 results = results[:num_to_keep]
@@ -661,6 +698,55 @@ class ReportDB:
             cursor = self._conn.execute(sql, values)
             self._safe_commit()
             return cursor.rowcount > 0
+
+    def update_burst_ids(self, burst_map: dict) -> int:
+        """
+        批量更新照片的 burst_id 和 burst_position。
+        
+        Args:
+            burst_map: 字典，格式为
+                {filename: (burst_id, burst_position)} 或
+                {(source_dir, filename): (burst_id, burst_position)}
+            
+        Returns:
+            成功更新的记录数
+        """
+        if not burst_map:
+            return 0
+            
+        updates = []
+        now = _now_iso()
+        for photo_key, (bid, pos) in burst_map.items():
+            if isinstance(photo_key, tuple):
+                filename = photo_key[-1]
+            else:
+                filename = photo_key
+            if not filename:
+                continue
+            updates.append((bid, pos, now, filename))
+            
+        sql = """
+        UPDATE photos 
+        SET burst_id = ?, burst_position = ?, updated_at = ? 
+        WHERE filename = ?
+        """
+        
+        with self._lock:
+            cursor = self._conn.executemany(sql, updates)
+            self._safe_commit()
+            return cursor.rowcount
+
+    def clear_burst_ids(self) -> int:
+        """清空全部连拍分组字段。"""
+        sql = """
+        UPDATE photos
+        SET burst_id = NULL, burst_position = NULL, updated_at = ?
+        WHERE burst_id IS NOT NULL OR burst_position IS NOT NULL
+        """
+        with self._lock:
+            cursor = self._conn.execute(sql, [_now_iso()])
+            self._safe_commit()
+            return cursor.rowcount
 
     def delete_photo(self, filename: str) -> bool:
         """从 photos 表中删除指定文件名的记录。

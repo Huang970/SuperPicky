@@ -54,8 +54,21 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 
+from app_user_stat.telemetry import bootstrap_telemetry
 from ui.main_window import SuperPickyMainWindow
 from ui.styles import APP_TOOLTIP_STYLE
+from tools.system_logger import setup_error_logging
+
+# 尽早捕获未处理异常，写入 superpicky.log（或 config dir fallback）
+setup_error_logging()
+
+# 内存监视器（开发调试用）：设置环境变量 SP_MEMORY_MONITOR=1 启用
+# 例：SP_MEMORY_MONITOR=1 python main.py
+# 日志写入 <SuperPicky 配置目录>/memory_monitor.log
+_memory_monitor = None
+if os.environ.get("SP_MEMORY_MONITOR") == "1":
+    from tools.memory_monitor import MemoryMonitor
+    _memory_monitor = MemoryMonitor(interval=30)
 
 # V3.9.3: 全局窗口引用，防止重复创建
 _main_window = None
@@ -64,6 +77,14 @@ _main_window = None
 def main():
     """主函数"""
     global _main_window
+
+    # Fix: macOS GUI launch (double-click / Dock) sets CWD to read-only '/'.
+    # YOLO attempts to create a 'runs/' dir relative to CWD, which fails with
+    # [Errno 30] Read-only file system on Intel Macs (CPU inference path).
+    # Switch to the user home dir so any YOLO cache writes succeed.
+    if sys.platform == 'darwin':
+        safe_cwd = os.path.expanduser('~')
+        os.chdir(safe_cwd)
     
     # V3.9.3: 检查是否已有 QApplication 实例
     app = QApplication.instance()
@@ -119,8 +140,12 @@ def main():
     if _main_window is None:
         _main_window = SuperPickyMainWindow()
         _main_window.show()
+        bootstrap_telemetry(_main_window, on_ready=_main_window.run_startup_prompts)
         # 统一退出清理：无论通过 X / 托盘 / Cmd+Q 退出，都会经由 aboutToQuit 信号
         app.aboutToQuit.connect(_main_window._cleanup_on_quit)
+        if _memory_monitor is not None:
+            _memory_monitor.start()
+            app.aboutToQuit.connect(_memory_monitor.stop)
     else:
         print("⚠️  检测到已存在的主窗口实例")
         _main_window.raise_()
