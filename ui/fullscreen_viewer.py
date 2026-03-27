@@ -764,7 +764,7 @@ class FullscreenViewer(QWidget):
         h.setSpacing(12)
         h.addSpacing(20)
         # 返回按钮
-        ###added by old huang
+        ###old skywalker
         back_btn = QPushButton("返回", self)
         back_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
@@ -788,7 +788,7 @@ class FullscreenViewer(QWidget):
         self._focus_btn.setMinimumWidth(80)
         self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
-        #added by old huang
+        #old skywalker
         self._focus_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"

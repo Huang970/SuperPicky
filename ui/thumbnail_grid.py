@@ -979,7 +979,7 @@ class ThumbnailGrid(QScrollArea):
         else:
             # 普通点击：清空多选，单选当前，更新 anchor
             self._clear_multi_selection()
-            ###added by old huang
+            ###added by old skywalker
             self._multi_selected.add(photo_key)
             card = self._cards.get(photo_key)
             if card:

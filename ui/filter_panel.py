@@ -220,7 +220,7 @@ class FilterPanel(QWidget):
         # --- 重置按钮 ---
         reset_btn = QPushButton(self.i18n.t("browser.reset_filter"))
         reset_btn.setObjectName("secondary")
-        ###added by old huang
+        ###added by old skywalker
         reset_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"

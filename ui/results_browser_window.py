@@ -536,7 +536,7 @@ class ResultsBrowserWindow(QMainWindow):
 
         #layout.addSpacing(4)
 
-        # Added by old huang.
+        #old skywalker.
         #创建导出按钮
         self._copyTo_btn = QPushButton("导出", self)
         self._copyTo_btn.setObjectName("export")
@@ -586,36 +586,17 @@ class ResultsBrowserWindow(QMainWindow):
                 background: transparent;
             }
         """)
-        # self._dir_label.setStyleSheet(f"""
-        #     QLabel {{
-        #         color: {COLORS['text_secondary']};
-        #         font-size: 12px;
-        #         font-family: {FONTS['mono']};
-        #         background: transparent;
-        #     }}
-        # """)
-        #self._dir_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._dir_label.setFixedWidth(800)
         layout.addWidget(self._dir_label)
 
         layout.addSpacing(16)
         # end
 
-
         # 对比按钮（C5，多选2张时显示）
         self._compare_btn = QPushButton("比较", self)
         self._compare_btn.setObjectName("secondary")
         self._compare_btn.setFixedHeight(32)
         self._compare_btn.setFixedWidth(60)
-        # self._compare_btn.setStyleSheet(
-        #     f"QPushButton {{ background-color: #1a3a1a;"
-        #     f" border: 1px solid #33cc33;"
-        #     f" border-radius: 6px;"
-        #     f" color: #66ff66;"
-        #     f" font-size: 12px;"
-        #     f" padding: 2px 12px; }}"
-        #     f"QPushButton:hover {{ background-color: #33cc33; color: #ffffff; }}"
-        # )
         self._compare_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"
@@ -656,7 +637,7 @@ class ResultsBrowserWindow(QMainWindow):
 
         return bar
 
-    # Added by old huang.
+    #old skywalker.
     def _copy_selected_photos(self):
 
         # 1. 获取多选的照片数据
@@ -1031,11 +1012,11 @@ class ResultsBrowserWindow(QMainWindow):
             self._detail_panel.show_photo(selected_photo)
         else:
             self._detail_panel.clear()
-        #added by old huang
+        #old skywalker
         self._select_count_label.setText("")
         self._select_count_label.hide()
         self._compare_btn.hide()
-        # end
+        #end
 
     @Slot(int)
     def _toggle_burst(self, burst_id: int):
