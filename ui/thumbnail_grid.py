@@ -657,6 +657,12 @@ class ThumbnailGrid(QScrollArea):
         else:
             # 普通点击：清空多选，单选当前，更新 anchor
             self._clear_multi_selection()
+            ###added by old huang
+            self._multi_selected.add(filename)
+            card = self._cards.get(filename)
+            if card:
+                card.set_multi_selected(True)
+            ###end
             self._anchor_photo = photo
             self._last_clicked_idx = clicked_idx
             self.select_photo(filename)

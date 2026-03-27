@@ -14,10 +14,11 @@ ResultsBrowserWindow(QMainWindow): 三栏布局
 import os
 import subprocess
 import sys
+import shutil
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QLabel, QPushButton, QStatusBar,
+    QLabel, QPushButton, QStatusBar, QFileDialog,
     QSlider, QComboBox, QMessageBox, QSizePolicy, QApplication,
     QStackedWidget, QMenu
 )
@@ -378,32 +379,115 @@ class ResultsBrowserWindow(QMainWindow):
         """)
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(16, 8, 16, 8)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
+        layout.addSpacing(8)
 
         # P2: 返回主界面按钮（最左侧）
-        back_btn = QPushButton(self.i18n.t("browser.back"))
+        back_btn = QPushButton("返回", self)
         back_btn.setObjectName("tertiary")
         back_btn.setFixedHeight(32)
+        back_btn.setStyleSheet(
+            "QPushButton { background-color: #1a3a1a;"
+            " border: 1px solid #33cc33;"
+            " border-radius: 6px;"
+            " color: #66ff66;"
+            " font-size: 12px;"
+            " padding: 2px 12px; }"
+            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
+        )
         back_btn.setToolTip(self.i18n.t("browser.back_tooltip"))
         back_btn.clicked.connect(self._go_back_to_main)
         layout.addWidget(back_btn)
 
-        layout.addSpacing(8)
+        #layout.addSpacing(4)
+
+        # Added by old huang.
+        #创建导出按钮
+        self._copyTo_btn = QPushButton("导出", self)
+        self._copyTo_btn.setObjectName("export")
+        self._copyTo_btn.setFixedHeight(32)
+        self._copyTo_btn.setToolTip("将选定的照片复制到指定目录")
+        #self._copyTo_btn.setFixedSize(100, 32)
+        self._copyTo_btn.setStyleSheet(
+            "QPushButton { background-color: #1a3a1a;"
+            " border: 1px solid #33cc33;"
+            " border-radius: 6px;"
+            " color: #66ff66;"
+            " font-size: 12px;"
+            " padding: 2px 12px; }"
+            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
+        )
+        self._copyTo_btn.clicked.connect(self._copy_selected_photos)
+        layout.addWidget(self._copyTo_btn)
+        layout.addSpacing(4)
+
+        #创建浏览目录按钮
+        self._browser_btn = QPushButton("选择目录", self)
+        self._browser_btn.setObjectName("browser")
+        self._browser_btn.setFixedHeight(32)
+        self._browser_btn.setToolTip("选定照片复制目录")
+        self._browser_btn.setStyleSheet(
+            "QPushButton { background-color: #1a3a1a;"
+            " border: 1px solid #33cc33;"
+            " border-radius: 6px;"
+            " color: #66ff66;"
+            " font-size: 12px;"
+            " padding: 2px 12px; }"
+            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
+        )
+        self._browser_btn.clicked.connect(self._browser_btn_request)
+        layout.addWidget(self._browser_btn)
+        #layout.addSpacing(4)
+        # end
 
         # 目录显示标签
-        self._dir_label = QLabel(self.i18n.t("browser.open_dir"))
-        self._dir_label.setStyleSheet(f"""
-            QLabel {{
-                color: {COLORS['text_secondary']};
+        #self._dir_label = QLabel(self.i18n.t("browser.open_dir"))
+        self._dir_label = QLabel("",self)
+        self._dir_label.setStyleSheet("""
+            QLabel {
+                color: #ffffff;
                 font-size: 12px;
-                font-family: {FONTS['mono']};
                 background: transparent;
-            }}
+            }
         """)
+        # self._dir_label.setStyleSheet(f"""
+        #     QLabel {{
+        #         color: {COLORS['text_secondary']};
+        #         font-size: 12px;
+        #         font-family: {FONTS['mono']};
+        #         background: transparent;
+        #     }}
+        # """)
         self._dir_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         layout.addWidget(self._dir_label)
 
         layout.addSpacing(16)
+
+        # 对比按钮（C5，多选2张时显示）
+        self._compare_btn = QPushButton("比较", self)
+        self._compare_btn.setObjectName("secondary")
+        self._compare_btn.setFixedHeight(32)
+        # self._compare_btn.setStyleSheet(
+        #     f"QPushButton {{ background-color: #1a3a1a;"
+        #     f" border: 1px solid #33cc33;"
+        #     f" border-radius: 6px;"
+        #     f" color: #66ff66;"
+        #     f" font-size: 12px;"
+        #     f" padding: 2px 12px; }}"
+        #     f"QPushButton:hover {{ background-color: #33cc33; color: #ffffff; }}"
+        # )
+        self._compare_btn.setStyleSheet(
+            "QPushButton { background-color: #1a3a1a;"
+            " border: 1px solid #33cc33;"
+            " border-radius: 6px;"
+            " color: #66ff66;"
+            " font-size: 12px;"
+            " padding: 2px 12px; }"
+            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
+        )
+        self._compare_btn.hide()
+        self._compare_btn.clicked.connect(self._enter_comparison)
+        layout.addWidget(self._compare_btn)
 
         # 多选计数标签（C3，默认隐藏）
         self._select_count_label = QLabel("")
@@ -417,27 +501,118 @@ class ResultsBrowserWindow(QMainWindow):
         self._select_count_label.hide()
         layout.addWidget(self._select_count_label)
 
-        # 对比按钮（C5，多选2张时显示）
-        self._compare_btn = QPushButton(self.i18n.t("browser.compare_btn"))
-        self._compare_btn.setObjectName("secondary")
-        self._compare_btn.setFixedHeight(32)
-        self._compare_btn.hide()
-        self._compare_btn.clicked.connect(self._enter_comparison)
-        layout.addWidget(self._compare_btn)
-
         # 缩略图尺寸滑块
         size_label = QLabel(self.i18n.t("browser.size_label"))
         size_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px; background: transparent;")
+        size_label.hide()
         layout.addWidget(size_label)
 
         self._size_slider = QSlider(Qt.Horizontal)
         self._size_slider.setRange(80, 300)
         self._size_slider.setValue(160)
-        self._size_slider.setFixedWidth(100)
+        self._size_slider.setFixedWidth(80)
         self._size_slider.valueChanged.connect(self._on_size_changed)
         layout.addWidget(self._size_slider)
 
         return bar
+
+    # Added by old huang.
+    def _copy_selected_photos(self):
+
+        # 1. 获取多选的照片数据
+        selected_list = self._thumb_grid.get_multi_selected_photos()
+
+        if not selected_list:
+            QMessageBox.warning(self, "提示", "请先用Ctrl+鼠标左键选择需要导出的图片！")
+            return
+
+        # 第一次打开用空路径，之后用上次记住的
+        last_dir = getattr(self, "_last_target_dir", "")
+
+        # 如果为空打开对话框（默认从上次目录开始）
+        if not last_dir:
+            target_dir = QFileDialog.getExistingDirectory(
+                self,
+                "请选择要导出的目标文件夹",
+                last_dir  # 这里传入上次路径
+            )
+
+            # 如果用户选择了路径，保存起来，下次用
+            if target_dir:
+                self._last_target_dir = target_dir
+                self._dir_label.setText(target_dir)
+            else:
+                return
+        else:
+            target_dir = last_dir
+
+        success_count = 0
+        fail_files = []
+
+        # 3. 遍历每个选中项，取出路径并移动
+        for item in selected_list:
+            try:
+                # 从字典里拿真实路径
+                img_path = item["current_path"]
+                file_name = os.path.basename(img_path)
+                target_path = os.path.join(target_dir, file_name)
+                print("source:",img_path)
+                print("Target Dir:",target_path)
+                img_path = img_path[:-4] + ".JPG"
+                target_path = target_path[:-4] + ".JPG"
+                if os.path.exists(img_path):
+                    shutil.copy(img_path, target_path)
+                img_path = img_path[:-4] + ".ORF"
+                target_path = target_path[:-4] + ".ORF"
+                #print("source:",img_path)
+                #print("Target Dir:",target_path)
+                if os.path.exists(img_path):
+                    shutil.copy(img_path, target_path)
+                img_path = img_path[:-4] + ".RW2"
+                target_path = target_path[:-4] + ".RW2"
+                #print("source:",img_path)
+                #print("Target Dir:",target_path)
+                if os.path.exists(img_path):
+                    shutil.copy(img_path, target_path)
+                # img_path = img_path[:-4] + ".xmp"
+                # target_path = target_path[:-4] + ".xmp"
+                # print("source:",img_path)
+                # print("Target Dir:",target_path)
+                # #shutil.copy(img_path, target_path)
+
+                success_count += 1
+
+            except Exception as e:
+                # 出错时安全记录
+                fname = item.get("filename", "未知文件")
+                fail_files.append(f"{fname} -> {str(e)}")
+
+        # 4. 结果提示
+        msg = f"成功导出：{success_count} 张"
+        if fail_files:
+            msg += f"\n失败：{len(fail_files)} 张"
+
+        QMessageBox.information(self, "完成", msg)
+
+    def _browser_btn_request(self):
+        # 第一次打开用空路径，之后用上次记住的
+        last_dir = getattr(self, "_last_target_dir", "")
+
+        # 如果为空打开对话框（默认从上次目录开始）
+        target_dir = QFileDialog.getExistingDirectory(
+            self,
+            "请选择要导出的目标文件夹",
+            last_dir  # 这里传入上次路径
+        )
+
+        # 如果用户选择了路径，保存起来，下次用
+        if target_dir:
+            self._last_target_dir = target_dir
+            self._dir_label.setText(target_dir)
+        else:
+            return
+
+    # Added end
 
     def _setup_statusbar(self):
         self._status_bar = QStatusBar()
@@ -481,8 +656,9 @@ class ResultsBrowserWindow(QMainWindow):
 
         self._directory = directory
         short_name = os.path.basename(directory) or directory
-        self._dir_label.setText(short_name)
-        self._dir_label.setToolTip(directory)
+        #self._dir_label.setText(short_name)
+        #self._dir_label.setText(directory)
+        #self._dir_label.setToolTip(directory)
 
         # 加载数据
         self._all_photos = self._db.get_all_photos()
@@ -551,6 +727,11 @@ class ResultsBrowserWindow(QMainWindow):
             self._detail_panel.show_photo(first)
         else:
             self._detail_panel.clear()
+        #added by old huang
+        self._select_count_label.setText("")
+        self._select_count_label.hide()
+        self._compare_btn.hide()
+        #end
 
     @Slot(dict)
     def _on_photo_selected(self, photo: dict):
@@ -619,7 +800,7 @@ class ResultsBrowserWindow(QMainWindow):
     def _on_multi_selection_changed(self, photos: list):
         """C3：多选状态变化，更新工具栏显示。"""
         n = len(photos)
-        if n > 1:
+        if n >= 1:
             self._select_count_label.setText(self.i18n.t("browser.selected_count").format(n=n))
             self._select_count_label.show()
         else:

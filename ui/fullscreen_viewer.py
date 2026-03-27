@@ -750,12 +750,23 @@ class FullscreenViewer(QWidget):
         h = QHBoxLayout(bar)
         h.setContentsMargins(16, 0, 16, 0)
         h.setSpacing(12)
-
+        h.addSpacing(20)
         # 返回按钮
-        back_btn = QPushButton(self.i18n.t("browser.back"))
+        ###added by old huang
+        back_btn = QPushButton("返回", self)
+        back_btn.setStyleSheet(
+            "QPushButton { background-color: #1a3a1a;"
+            " border: 1px solid #33cc33;"
+            " border-radius: 6px;"
+            " color: #66ff66;"
+            " font-size: 12px;"
+            " padding: 2px 12px; }"
+            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
+        )
+        ###end
         back_btn.setObjectName("secondary")
         back_btn.setFixedHeight(36)
-        back_btn.setMinimumWidth(100)
+        #back_btn.setMinimumWidth(100)
         back_btn.clicked.connect(self.close_requested)
         h.addWidget(back_btn)
 
@@ -765,9 +776,21 @@ class FullscreenViewer(QWidget):
         self._focus_btn.setMinimumWidth(80)
         self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
+        #added by old huang
+        self._focus_btn.setStyleSheet(
+            "QPushButton { background-color: #1a3a1a;"
+            " border: 1px solid #33cc33;"
+            " border-radius: 6px;"
+            " color: #66ff66;"
+            " font-size: 12px;"
+            " padding: 2px 12px; }"
+            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
+        )
+        ###end
         h.addWidget(self._focus_btn)
         # 初始状态：焦点关闭 → inactive 样式
         self._update_focus_btn_style(False)
+
 
         # 功能2：锁定缩放按钮
         self._lock_zoom_btn = QPushButton("🔓 锁定缩放")

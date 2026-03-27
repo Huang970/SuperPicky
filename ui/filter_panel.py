@@ -21,6 +21,7 @@ from ui.styles import COLORS, FONTS
 # ratings_list = None → 不过滤评分
 _RATING_OPTIONS = [
     ("picked", "🏆",   [3, 4, 5]),   # 精选：Top 25% 3★ 照片
+    ("4",     "❤️", [4, 5]),
     ("3",     "★★★", [3, 4, 5]),
     ("2",     "★★",  [2]),
     ("1",     "★",   [1]),
@@ -207,17 +208,28 @@ class FilterPanel(QWidget):
 
         layout.addStretch()
 
-        # --- 数量标签 ---
-        self._count_label = QLabel("")
-        self._count_label.setAlignment(Qt.AlignCenter)
-        self._count_label.setStyleSheet(
-            f"color: {COLORS['text_muted']}; font-size: 11px; background: transparent;"
-        )
-        layout.addWidget(self._count_label)
+        # # --- 数量标签 ---
+        # self._count_label = QLabel("")
+        # self._count_label.setAlignment(Qt.AlignCenter)
+        # self._count_label.setStyleSheet(
+        #     f"color: {COLORS['text_muted']}; font-size: 11px; background: transparent;"
+        # )
+        # layout.addWidget(self._count_label)
 
         # --- 重置按钮 ---
         reset_btn = QPushButton(self.i18n.t("browser.reset_filter"))
         reset_btn.setObjectName("secondary")
+        ###added by old huang
+        reset_btn.setStyleSheet(
+            "QPushButton { background-color: #1a3a1a;"
+            " border: 1px solid #33cc33;"
+            " border-radius: 6px;"
+            " color: #66ff66;"
+            " font-size: 12px;"
+            " padding: 2px 12px; }"
+            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
+        )
+        ###end
         reset_btn.clicked.connect(self.reset_all)
         layout.addWidget(reset_btn)
 
@@ -229,33 +241,71 @@ class FilterPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _build_rating_buttons(self) -> QWidget:
-        """5个评分互斥单选按钮（精选/★★★/★★/★/0），横排。"""
+
+        # 第一行（原按钮组）
         w = QWidget()
         w.setStyleSheet("background: transparent;")
         row = QHBoxLayout(w)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(4)
 
-        self._rating_btns: dict = {}  # mode -> QPushButton
+        # 第二行（仅4星）
+        w_row2 = QWidget()
+        w_row2.setStyleSheet("background: transparent;")
+        row2 = QHBoxLayout(w_row2)
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(4)
 
-        # 窄按钮 mode 集合（★★/★/0/🏆 都固定宽度，留空间给 ★★★）
-        _narrow = {"2": 34, "1": 28, "0": 28, "picked": 32}
+        # 外层容器（无外框）
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        v_layout = QVBoxLayout(container)
+        v_layout.setContentsMargins(0, 0, 0, 0)
+        v_layout.setSpacing(4)
+        v_layout.addWidget(w)
+        v_layout.addWidget(w_row2)
+
+        self._rating_btns: dict = {}
+        # 给4星也加固定宽度，避免撑满
+        _narrow = {"2": 34, "1": 28, "0": 28, "picked": 32, "4": 32}
 
         for mode, label, ratings in _RATING_OPTIONS:
             btn = QPushButton(label)
             btn.setFixedHeight(30)
+
+            # 统一宽度规则：4星也用固定宽度
             if mode in _narrow:
                 btn.setFixedWidth(_narrow[mode])
             else:
                 btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+            # 仅默认选中项高亮
             active = (mode == _DEFAULT_RATING)
             btn.setStyleSheet(self._rating_btn_style(active, mode))
-            _m = mode
-            btn.clicked.connect(lambda _=None, m=_m: self._on_rating_btn(m))
-            self._rating_btns[mode] = btn
-            row.addWidget(btn)
 
-        return w
+            _m = mode
+            btn.clicked.connect(lambda _, m=_m: self._on_rating_btn(m))
+            self._rating_btns[mode] = btn
+
+            if mode == "4":
+                row2.addWidget(btn)
+                #row2.addStretch()  # 左对齐
+            else:
+                row.addWidget(btn)
+
+        # 第一行末尾加弹簧，消除多余空白条
+        row.addStretch()
+        # --- 数量标签 ---
+        self._count_label = QLabel("")
+        self._count_label.setAlignment(Qt.AlignCenter)
+        self._count_label.setStyleSheet(
+            f"color: {COLORS['text_muted']}; font-size: 11px; background: transparent;"
+        )
+        row2.addWidget(self._count_label)
+        #row2.addStretch()
+
+        return container
+
 
     def _rating_btn_style(self, active: bool, mode: str = "") -> str:
         # 精选按钮用金色高亮
@@ -382,7 +432,7 @@ class FilterPanel(QWidget):
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )
             self._count_label.setText("⚠ 无结果")
-        elif count < 10:
+        elif count < 1000:
             self._count_label.setStyleSheet(
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )
