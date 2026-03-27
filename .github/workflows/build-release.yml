@@ -118,6 +118,49 @@ jobs:
           files: |
             release_assets/*
 
+      - name: Upload Windows assets to GitCode
+        shell: pwsh
+        env:
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          TAG: ${{ steps.release_meta.outputs.tag }}
+        run: |
+          $projectId = "Jamesphotography%2FSuperPicky"
+          $baseUrl = "https://gitcode.com/api/v4/projects/$projectId"
+          $headers = @{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN }
+          $tag = $env:TAG
+          $links = @()
+
+          foreach ($file in Get-ChildItem release_assets -File) {
+            $filename = $file.Name
+            $uploadUrl = "$baseUrl/packages/generic/release/$tag/$filename"
+            Invoke-RestMethod -Uri $uploadUrl -Method Put -InFile $file.FullName -Headers $headers
+            $links += @{
+              name      = $filename
+              url       = "https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release/$tag/$filename"
+              link_type = "package"
+            }
+          }
+
+          $changelog = Get-Content ChangeLog.md -Raw
+          $body = @{
+            tag_name    = $tag
+            name        = "SuperPicky $tag"
+            description = $changelog
+            assets      = @{ links = $links }
+          } | ConvertTo-Json -Depth 5
+
+          try {
+            Invoke-RestMethod -Uri "$baseUrl/releases" -Method Post -Body $body `
+              -Headers (@{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" })
+          } catch {
+            # Release may already exist (created by mac job), add links only
+            foreach ($link in $links) {
+              $linkBody = $link | ConvertTo-Json
+              Invoke-RestMethod -Uri "$baseUrl/releases/$tag/assets/links" -Method Post -Body $linkBody `
+                -Headers (@{ "PRIVATE-TOKEN" = $env:GITCODE_TOKEN; "Content-Type" = "application/json" }) -ErrorAction SilentlyContinue
+            }
+          }
+
   build-mac:
     runs-on: macos-14
     permissions:
@@ -309,3 +352,38 @@ jobs:
           name: ${{ steps.release_meta.outputs.name }}
           body_path: ChangeLog.md
           files: ${{ env.DMG_PATH }}
+
+      - name: Upload Mac DMG to GitCode
+        env:
+          GITCODE_TOKEN: ${{ secrets.GITCODE_TOKEN }}
+          TAG: ${{ steps.release_meta.outputs.tag }}
+        run: |
+          PROJECT_ID="Jamesphotography%2FSuperPicky"
+          BASE_URL="https://gitcode.com/api/v4/projects/$PROJECT_ID"
+          FILENAME=$(basename "${DMG_PATH}")
+
+          curl --fail -T "${DMG_PATH}" \
+            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+            "$BASE_URL/packages/generic/release/$TAG/$FILENAME"
+
+          CHANGELOG=$(cat ChangeLog.md)
+          LINK_URL="https://gitcode.com/Jamesphotography/SuperPicky/-/package_files/generic/release/$TAG/$FILENAME"
+
+          RELEASE_BODY=$(printf '{"tag_name":"%s","name":"SuperPicky %s","description":"%s","assets":{"links":[{"name":"%s","url":"%s","link_type":"package"}]}}' \
+            "$TAG" "$TAG" "$(echo "$CHANGELOG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" | tr -d '"')" \
+            "$FILENAME" "$LINK_URL")
+
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+            --header "Content-Type: application/json" \
+            --request POST \
+            --data "{\"tag_name\":\"$TAG\",\"name\":\"SuperPicky $TAG\",\"description\":\"See GitHub release for details.\",\"assets\":{\"links\":[{\"name\":\"$FILENAME\",\"url\":\"$LINK_URL\",\"link_type\":\"package\"}]}}" \
+            "$BASE_URL/releases")
+
+          if [ "$HTTP_STATUS" != "201" ]; then
+            curl -s --header "PRIVATE-TOKEN: $GITCODE_TOKEN" \
+              --header "Content-Type: application/json" \
+              --request POST \
+              --data "{\"name\":\"$FILENAME\",\"url\":\"$LINK_URL\",\"link_type\":\"package\"}" \
+              "$BASE_URL/releases/$TAG/assets/links"
+          fi
