@@ -18,6 +18,7 @@ import shutil
 from collections import Counter
 from datetime import datetime
 
+from PySide6 import QtCore
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QStatusBar, QFileDialog,
@@ -493,10 +494,33 @@ class ResultsBrowserWindow(QMainWindow):
         layout.setSpacing(8)
         layout.addSpacing(8)
 
+        # Directory switcher combo box
+        self._dir_combo = QComboBox()
+        self._dir_combo.setFixedHeight(32)
+        self._dir_combo.setFixedWidth(400)
+        self._dir_combo.setMinimumWidth(200)
+        self._dir_combo.setMaximumWidth(400)
+        self._dir_combo.setStyleSheet(f"""
+            QComboBox {{
+                color: {COLORS['text_secondary']};
+                background: {COLORS['bg_primary']};
+                border: 1px solid {COLORS['border_subtle']};
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 12px;
+                font-family: {FONTS['mono']};
+            }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+        """)
+        self._dir_combo.currentIndexChanged.connect(self._on_subdir_changed)
+        #self._dir_combo.hide()
+        layout.addWidget(self._dir_combo)
+
         # P2: 返回主界面按钮（最左侧）
         back_btn = QPushButton("返回", self)
         back_btn.setObjectName("tertiary")
         back_btn.setFixedHeight(32)
+        back_btn.setFixedWidth(60)
         back_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"
@@ -517,6 +541,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._copyTo_btn = QPushButton("导出", self)
         self._copyTo_btn.setObjectName("export")
         self._copyTo_btn.setFixedHeight(32)
+        self._copyTo_btn.setFixedWidth(60)
         self._copyTo_btn.setToolTip("将选定的照片复制到指定目录")
         #self._copyTo_btn.setFixedSize(100, 32)
         self._copyTo_btn.setStyleSheet(
@@ -536,6 +561,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._browser_btn = QPushButton("选择目录", self)
         self._browser_btn.setObjectName("browser")
         self._browser_btn.setFixedHeight(32)
+        self._browser_btn.setFixedWidth(100)
         self._browser_btn.setToolTip("选定照片复制目录")
         self._browser_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
@@ -549,28 +575,6 @@ class ResultsBrowserWindow(QMainWindow):
         self._browser_btn.clicked.connect(self._browser_btn_request)
         layout.addWidget(self._browser_btn)
         #layout.addSpacing(4)
-        # end
-
-        # Directory switcher combo box
-        self._dir_combo = QComboBox()
-        self._dir_combo.setFixedHeight(32)
-        self._dir_combo.setMinimumWidth(200)
-        self._dir_combo.setMaximumWidth(400)
-        self._dir_combo.setStyleSheet(f"""
-            QComboBox {{
-                color: {COLORS['text_secondary']};
-                background: {COLORS['bg_primary']};
-                border: 1px solid {COLORS['border_subtle']};
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 12px;
-                font-family: {FONTS['mono']};
-            }}
-            QComboBox::drop-down {{ border: none; width: 20px; }}
-        """)
-        self._dir_combo.currentIndexChanged.connect(self._on_subdir_changed)
-        self._dir_combo.hide()
-        layout.addWidget(self._dir_combo)
 
         # 目录显示标签
         #self._dir_label = QLabel(self.i18n.t("browser.open_dir"))
@@ -590,15 +594,19 @@ class ResultsBrowserWindow(QMainWindow):
         #         background: transparent;
         #     }}
         # """)
-        self._dir_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        #self._dir_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self._dir_label.setFixedWidth(800)
         layout.addWidget(self._dir_label)
 
         layout.addSpacing(16)
+        # end
+
 
         # 对比按钮（C5，多选2张时显示）
         self._compare_btn = QPushButton("比较", self)
         self._compare_btn.setObjectName("secondary")
         self._compare_btn.setFixedHeight(32)
+        self._compare_btn.setFixedWidth(60)
         # self._compare_btn.setStyleSheet(
         #     f"QPushButton {{ background-color: #1a3a1a;"
         #     f" border: 1px solid #33cc33;"
@@ -688,22 +696,18 @@ class ResultsBrowserWindow(QMainWindow):
                 img_path = item["current_path"]
                 file_name = os.path.basename(img_path)
                 target_path = os.path.join(target_dir, file_name)
-                print("source:",img_path)
-                print("Target Dir:",target_path)
+                #print("source:",img_path)
+                #print("Target Dir:",target_path)
                 img_path = img_path[:-4] + ".JPG"
                 target_path = target_path[:-4] + ".JPG"
                 if os.path.exists(img_path):
                     shutil.copy(img_path, target_path)
                 img_path = img_path[:-4] + ".ORF"
                 target_path = target_path[:-4] + ".ORF"
-                #print("source:",img_path)
-                #print("Target Dir:",target_path)
                 if os.path.exists(img_path):
                     shutil.copy(img_path, target_path)
                 img_path = img_path[:-4] + ".RW2"
                 target_path = target_path[:-4] + ".RW2"
-                #print("source:",img_path)
-                #print("Target Dir:",target_path)
                 if os.path.exists(img_path):
                     shutil.copy(img_path, target_path)
                 # img_path = img_path[:-4] + ".xmp"
@@ -794,10 +798,10 @@ class ResultsBrowserWindow(QMainWindow):
                 label = f"  ./ ({n})" if rel == '.' else f"  {rel}/ ({n})"
                 self._dir_combo.addItem(label, d)
             self._dir_combo.show()
-            self._dir_label.hide()
+            #self._dir_label.hide()
         else:
             self._dir_combo.hide()
-            self._dir_label.show()
+            #self._dir_label.show()
             if not processed:
                 db_path = os.path.join(directory, ".superpicky", "report.db")
                 if not os.path.exists(db_path):
@@ -1031,7 +1035,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._select_count_label.setText("")
         self._select_count_label.hide()
         self._compare_btn.hide()
-        #end
+        # end
 
     @Slot(int)
     def _toggle_burst(self, burst_id: int):
@@ -1729,10 +1733,10 @@ class ResultsBrowserWidget(QWidget):
                 n = self._count_db_photos(d)
                 label = f"  ./ ({n})" if rel == '.' else f"  {rel}/ ({n})"
                 self._dir_combo.addItem(label, d)
-            self._dir_combo.show()
-            self._dir_label.hide()
+            #self._dir_combo.show()
+            #self._dir_label.hide()
         else:
-            self._dir_combo.hide()
+            #self._dir_combo.hide()
             self._dir_label.show()
             if not processed:
                 db_path = os.path.join(directory, ".superpicky", "report.db")
