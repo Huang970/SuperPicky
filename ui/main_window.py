@@ -654,7 +654,7 @@ class SuperPickyMainWindow(QMainWindow):
         QTimer.singleShot(1000, self._auto_start_birdid_server)
 
         # V4.0.1: 启动时检查更新（延迟2秒，避免阻塞UI，没有更新时不弹窗）
-        QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
+        #QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
         
         # V4.2: 启动时预加载所有模型（延迟3秒，后台加载不阻塞UI）
         QTimer.singleShot(3000, self._preload_all_models)

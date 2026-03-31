@@ -765,7 +765,7 @@ class FullscreenViewer(QWidget):
         h.addSpacing(20)
         # 返回按钮
         ###old skywalker
-        back_btn = QPushButton("返回", self)
+        back_btn = QPushButton(self.i18n.t("browser.back"))
         back_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"

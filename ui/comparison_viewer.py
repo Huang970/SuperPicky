@@ -94,7 +94,7 @@ class ComparisonViewer(QWidget):
         h.setContentsMargins(16, 0, 16, 0)
         h.setSpacing(12)
 
-        back_btn = QPushButton("返回", self)
+        back_btn = QPushButton(self.i18n.t("browser.back"))
         back_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"
@@ -104,7 +104,6 @@ class ComparisonViewer(QWidget):
             " padding: 2px 12px; }"
             "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
         )
-        #back_btn = QPushButton(self.i18n.t("browser.back"))
         back_btn.setObjectName("secondary")
         back_btn.setFixedHeight(32)
         #back_btn.setMinimumWidth(100)

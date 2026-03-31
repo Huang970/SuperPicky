@@ -14,7 +14,9 @@ ResultsBrowserWindow(QMainWindow): 三栏布局
 import os
 import subprocess
 import sys
+import glob
 import shutil
+import winreg
 from collections import Counter
 from datetime import datetime
 
@@ -23,7 +25,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QStatusBar, QFileDialog,
     QSlider, QComboBox, QMessageBox, QSizePolicy, QApplication,
-    QStackedWidget, QMenu
+    QStackedWidget, QMenu,QLineEdit
 )
 from PySide6.QtCore import Qt, Signal, Slot, QProcess
 from PySide6.QtGui import QAction, QKeyEvent, QIcon, QFont
@@ -253,10 +255,48 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
     finder_action.triggered.connect(_reveal)
     menu.addAction(finder_action)
 
+    #old skywalker
+    def _get_default_image_viewer_name():
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.jpg\UserChoice"
+            )
+            prog_id, _ = winreg.QueryValueEx(key, "ProgId")
+            winreg.CloseKey(key)
+
+            # ==============================================
+            # 以 AppX 开头 → 就是系统「照片」UWP应用
+            # ==============================================
+            if prog_id.startswith("AppX"):
+                return "照片"
+
+            # 旧版照片查看器
+            elif "PhotoViewer" in prog_id:
+                return "Windows 照片查看器"
+
+            # 其他软件
+            else:
+                return "默认程序"
+
+        except Exception:
+            return "默认程序"
+
+    def _default_image_viewer():
+        subprocess.Popen(["cmd", "/c", "start", "", filepath], creationflags=subprocess.CREATE_NO_WINDOW)
+        return
+
+    open_app = "用 "+_get_default_image_viewer_name()+" 打开"
+    open_action = QAction(open_app, parent_widget)
+    open_action.setEnabled(bool(filepath))
+    open_action.triggered.connect(_default_image_viewer)
+    menu.addAction(open_action)
+    #end
+
     # 用户配置的外部应用列表（设置 → 外部应用）
     external_apps = get_advanced_config().get_external_apps()
     if external_apps:
-        menu.addSeparator()
+        #menu.addSeparator()
         for app in external_apps:
             app_name = app.get("name", "")
             app_path = app.get("path", "")
@@ -281,8 +321,7 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
         hint_action = QAction(_i18n.t('browser.ctx_add_external_app'), parent_widget)
         hint_action.setEnabled(False)
         menu.addAction(hint_action)
-
-    menu.addSeparator()
+    #menu.addSeparator()
 
     # 复制路径
     copy_action = QAction(_i18n.t('browser.ctx_copy_path'), parent_widget)
@@ -292,9 +331,7 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
             QApplication.clipboard().setText(_fp)
         copy_action.triggered.connect(_copy_path)
     menu.addAction(copy_action)
-
     menu.exec(pos)
-
 
 def _move_to_trash(filepath: str) -> bool:
     """将文件移入系统回收站（跨平台）。返回是否成功。"""
@@ -357,6 +394,7 @@ class ResultsBrowserWindow(QMainWindow):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.DIR_LBL_LEN = 24
         self.i18n = get_i18n()
         self._db: Optional[ReportDB] = None
         self._directory: str = ""
@@ -494,33 +532,11 @@ class ResultsBrowserWindow(QMainWindow):
         layout.setSpacing(8)
         layout.addSpacing(8)
 
-        # Directory switcher combo box
-        self._dir_combo = QComboBox()
-        self._dir_combo.setFixedHeight(32)
-        self._dir_combo.setFixedWidth(400)
-        self._dir_combo.setMinimumWidth(200)
-        self._dir_combo.setMaximumWidth(400)
-        self._dir_combo.setStyleSheet(f"""
-            QComboBox {{
-                color: {COLORS['text_secondary']};
-                background: {COLORS['bg_primary']};
-                border: 1px solid {COLORS['border_subtle']};
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 12px;
-                font-family: {FONTS['mono']};
-            }}
-            QComboBox::drop-down {{ border: none; width: 20px; }}
-        """)
-        self._dir_combo.currentIndexChanged.connect(self._on_subdir_changed)
-        #self._dir_combo.hide()
-        layout.addWidget(self._dir_combo)
-
         # P2: 返回主界面按钮（最左侧）
-        back_btn = QPushButton("返回", self)
+        back_btn = QPushButton(self.i18n.t("browser.back"))
         back_btn.setObjectName("tertiary")
         back_btn.setFixedHeight(32)
-        back_btn.setFixedWidth(60)
+        back_btn.setFixedWidth(50)
         back_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"
@@ -534,16 +550,34 @@ class ResultsBrowserWindow(QMainWindow):
         back_btn.clicked.connect(self._go_back_to_main)
         layout.addWidget(back_btn)
 
-        #layout.addSpacing(4)
+        # Directory switcher combo box
+        self._dir_combo = QComboBox()
+        self._dir_combo.setFixedHeight(32)
+        self._dir_combo.setFixedWidth(300)
+        self._dir_combo.setMinimumWidth(200)
+        self._dir_combo.setMaximumWidth(400)
+        self._dir_combo.setStyleSheet(f"""
+            QComboBox {{
+                color: {COLORS['text_secondary']};
+                background: {COLORS['bg_primary']};
+                border: 1px solid #33cc33;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 12px;
+                font-family: {FONTS['mono']};
+            }}
+            QComboBox::drop-down {{ border: none; width: 20px; }}
+        """)
+        self._dir_combo.currentIndexChanged.connect(self._on_subdir_changed)
+        self._dir_combo.hide()
+        layout.addWidget(self._dir_combo)
 
-        #old skywalker.
         #创建导出按钮
-        self._copyTo_btn = QPushButton("导出", self)
+        self._copyTo_btn = QPushButton(self.i18n.t("browser.export_file"))
         self._copyTo_btn.setObjectName("export")
         self._copyTo_btn.setFixedHeight(32)
-        self._copyTo_btn.setFixedWidth(60)
+        self._copyTo_btn.setFixedWidth(50)
         self._copyTo_btn.setToolTip("将选定的照片复制到指定目录")
-        #self._copyTo_btn.setFixedSize(100, 32)
         self._copyTo_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"
@@ -555,13 +589,12 @@ class ResultsBrowserWindow(QMainWindow):
         )
         self._copyTo_btn.clicked.connect(self._copy_selected_photos)
         layout.addWidget(self._copyTo_btn)
-        layout.addSpacing(4)
 
         #创建浏览目录按钮
-        self._browser_btn = QPushButton("选择目录", self)
+        self._browser_btn = QPushButton(self.i18n.t("browser.export_dir"))
         self._browser_btn.setObjectName("browser")
         self._browser_btn.setFixedHeight(32)
-        self._browser_btn.setFixedWidth(100)
+        self._browser_btn.setFixedWidth(62)
         self._browser_btn.setToolTip("选定照片复制目录")
         self._browser_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
@@ -574,29 +607,21 @@ class ResultsBrowserWindow(QMainWindow):
         )
         self._browser_btn.clicked.connect(self._browser_btn_request)
         layout.addWidget(self._browser_btn)
-        #layout.addSpacing(4)
 
         # 目录显示标签
-        #self._dir_label = QLabel(self.i18n.t("browser.open_dir"))
-        self._dir_label = QLabel("",self)
-        self._dir_label.setStyleSheet("""
-            QLabel {
-                color: #ffffff;
-                font-size: 12px;
-                background: transparent;
-            }
-        """)
-        self._dir_label.setFixedWidth(800)
+        self._dir_label = QLabel("", self)
+        self._dir_label.setFixedWidth(700)
+        self._dir_label.setMinimumWidth(700)
+        self._dir_label.setMaximumWidth(700)
+        self._dir_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self._dir_label.setWordWrap(False)
         layout.addWidget(self._dir_label)
 
-        layout.addSpacing(16)
-        # end
-
         # 对比按钮（C5，多选2张时显示）
-        self._compare_btn = QPushButton("比较", self)
+        self._compare_btn = QPushButton(self.i18n.t("browser.compare_btn"))
         self._compare_btn.setObjectName("secondary")
         self._compare_btn.setFixedHeight(32)
-        self._compare_btn.setFixedWidth(60)
+        self._compare_btn.setFixedWidth(50)
         self._compare_btn.setStyleSheet(
             "QPushButton { background-color: #1a3a1a;"
             " border: 1px solid #33cc33;"
@@ -661,7 +686,7 @@ class ResultsBrowserWindow(QMainWindow):
             # 如果用户选择了路径，保存起来，下次用
             if target_dir:
                 self._last_target_dir = target_dir
-                self._dir_label.setText(target_dir)
+                self._dir_babel_setTruncatedText()
             else:
                 return
         else:
@@ -675,41 +700,34 @@ class ResultsBrowserWindow(QMainWindow):
             try:
                 # 从字典里拿真实路径
                 img_path = item["current_path"]
-                file_name = os.path.basename(img_path)
-                target_path = os.path.join(target_dir, file_name)
-                #print("source:",img_path)
-                #print("Target Dir:",target_path)
-                img_path = img_path[:-4] + ".JPG"
-                target_path = target_path[:-4] + ".JPG"
                 if os.path.exists(img_path):
-                    shutil.copy(img_path, target_path)
-                img_path = img_path[:-4] + ".ORF"
-                target_path = target_path[:-4] + ".ORF"
-                if os.path.exists(img_path):
-                    shutil.copy(img_path, target_path)
-                img_path = img_path[:-4] + ".RW2"
-                target_path = target_path[:-4] + ".RW2"
-                if os.path.exists(img_path):
-                    shutil.copy(img_path, target_path)
-                # img_path = img_path[:-4] + ".xmp"
-                # target_path = target_path[:-4] + ".xmp"
-                # print("source:",img_path)
-                # print("Target Dir:",target_path)
-                # #shutil.copy(img_path, target_path)
-
-                success_count += 1
-
+                    img_path = img_path[:-4] + ".*"
+                    # 复制通配符文件
+                    subprocess.Popen(f'copy "{img_path}" "{target_dir}\\"', shell=True,
+                                     creationflags=subprocess.CREATE_NO_WINDOW)
+                    success_count += 1
             except Exception as e:
                 # 出错时安全记录
                 fname = item.get("filename", "未知文件")
                 fail_files.append(f"{fname} -> {str(e)}")
 
         # 4. 结果提示
-        msg = f"成功导出：{success_count} 张"
+        msg = f"执行导出：{success_count} 张，请稍后查看"
         if fail_files:
             msg += f"\n失败：{len(fail_files)} 张"
 
         QMessageBox.information(self, "完成", msg)
+
+    def _dir_babel_setTruncatedText(self):
+        target_dir = getattr(self, "_last_target_dir", "")
+        self._dir_label.setToolTip(target_dir)
+        if not self._dir_combo.isHidden():
+            self.DIR_LBL_LEN = 24
+        else:
+            self.DIR_LBL_LEN = 45
+        show = target_dir[:self.DIR_LBL_LEN] + "..." if len(target_dir) > self.DIR_LBL_LEN else target_dir
+        self._dir_label.setText(show)
+        return
 
     def _browser_btn_request(self):
         # 第一次打开用空路径，之后用上次记住的
@@ -725,7 +743,7 @@ class ResultsBrowserWindow(QMainWindow):
         # 如果用户选择了路径，保存起来，下次用
         if target_dir:
             self._last_target_dir = target_dir
-            self._dir_label.setText(target_dir)
+            self._dir_babel_setTruncatedText()
         else:
             return
 
@@ -792,7 +810,7 @@ class ResultsBrowserWindow(QMainWindow):
 
         self._dir_combo.blockSignals(False)
         self._directory = directory
-
+        self._dir_babel_setTruncatedText()
         if len(processed) > 1:
             self._load_merged(directory, processed)
         elif len(processed) == 1:
@@ -1717,7 +1735,7 @@ class ResultsBrowserWidget(QWidget):
             #self._dir_combo.show()
             #self._dir_label.hide()
         else:
-            #self._dir_combo.hide()
+            self._dir_combo.hide()
             self._dir_label.show()
             if not processed:
                 db_path = os.path.join(directory, ".superpicky", "report.db")
