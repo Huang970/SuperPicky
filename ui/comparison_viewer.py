@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent
 
-from ui.styles import COLORS, FONTS,set_btn_style
+from ui.styles import COLORS, FONTS, set_btn_style, update_focus_btn_style
 from ui.fullscreen_viewer import _FullscreenImageLabel, _ImageLoader
 
 
@@ -81,26 +81,26 @@ class ComparisonViewer(QWidget):
         # 底栏
         layout.addWidget(self._build_bottom_bar())
 
-    def _update_focus_btn_style(self, visible: bool):
-        """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
-        if visible:
-            self._focus_btn.setStyleSheet(
-                f"QPushButton {{ background-color: {COLORS['bg_input']};"
-                f" border: 1px solid {COLORS['accent']};"
-                f" border-radius: 6px;"
-                f" color: {COLORS['accent']};"
-                f" font-size: 12px;"
-                f" padding: 2px 10px; }}"
-            )
-        else:
-            self._focus_btn.setStyleSheet(
-                f"QPushButton {{ background-color: {COLORS['bg_card']};"
-                f" border: 1px solid {COLORS['border']};"
-                f" border-radius: 6px;"
-                f" color: {COLORS['text_secondary']};"
-                f" font-size: 12px;"
-                f" padding: 2px 10px; }}"
-            )
+    # def _update_focus_btn_style(self, visible: bool):
+    #     """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
+    #     if visible:
+    #         self._focus_btn.setStyleSheet(
+    #             f"QPushButton {{ background-color: {COLORS['bg_input']};"
+    #             f" border: 1px solid {COLORS['accent']};"
+    #             f" border-radius: 6px;"
+    #             f" color: {COLORS['accent']};"
+    #             f" font-size: 12px;"
+    #             f" padding: 2px 10px; }}"
+    #         )
+    #     else:
+    #         self._focus_btn.setStyleSheet(
+    #             f"QPushButton {{ background-color: {COLORS['bg_card']};"
+    #             f" border: 1px solid {COLORS['border']};"
+    #             f" border-radius: 6px;"
+    #             f" color: {COLORS['text_secondary']};"
+    #             f" font-size: 12px;"
+    #             f" padding: 2px 10px; }}"
+    #         )
 
     def _build_top_bar(self) -> QWidget:
         bar = QWidget()
@@ -135,7 +135,7 @@ class ComparisonViewer(QWidget):
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
         h.addWidget(self._focus_btn)
         # 初始状态：焦点开启 → active 样式
-        self._update_focus_btn_style(True)
+        update_focus_btn_style(self._focus_btn,True)
         h.addStretch()
 
         # 左侧文件名 + 评分
@@ -300,7 +300,8 @@ class ComparisonViewer(QWidget):
     # ------------------------------------------------------------------
     def _on_focus_btn_clicked(self):
         self._img_a.toggle_focus()
-        self._update_focus_btn_style(self._img_a.focus_visible)
+        #self._update_focus_btn_style(self._img_a.focus_visible)
+        update_focus_btn_style(self._focus_btn,self._img_a.focus_visible)
 
     def _refresh_labels(self):
         """刷新顶栏文件名和评分标签。"""

@@ -4,6 +4,28 @@ SuperPicky - UI 样式定义
 极简艺术风格 (Minimalist Artistic Design)
 """
 from PySide6.QtWidgets import QPushButton
+
+def update_focus_btn_style(focus_btn: QPushButton, visible: bool) -> None:
+    """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
+    if visible:
+        focus_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {COLORS['bg_input']};"
+            f" border: 1px solid {COLORS['accent']};"
+            f" border-radius: 6px;"
+            f" color: {COLORS['accent']};"
+            f" font-size: 12px;"
+            f" padding: 2px 10px; }}"
+        )
+    else:
+        focus_btn.setStyleSheet(
+            f"QPushButton {{ background-color: {COLORS['bg_card']};"
+            f" border: 1px solid {COLORS['border']};"
+            f" border-radius: 6px;"
+            f" color: {COLORS['text_secondary']};"
+            f" font-size: 12px;"
+            f" padding: 2px 10px; }}"
+        )
+
 def set_btn_style(btn: QPushButton):
     """公共按钮样式（全局函数，无任何依赖，不会循环导入）"""
     btn.setStyleSheet("""
