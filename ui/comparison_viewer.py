@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent
 
-from ui.styles import COLORS, FONTS
+from ui.styles import COLORS, FONTS,set_btn_style
 from ui.fullscreen_viewer import _FullscreenImageLabel, _ImageLoader
 
 
@@ -81,6 +81,27 @@ class ComparisonViewer(QWidget):
         # 底栏
         layout.addWidget(self._build_bottom_bar())
 
+    def _update_focus_btn_style(self, visible: bool):
+        """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
+        if visible:
+            self._focus_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {COLORS['bg_input']};"
+                f" border: 1px solid {COLORS['accent']};"
+                f" border-radius: 6px;"
+                f" color: {COLORS['accent']};"
+                f" font-size: 12px;"
+                f" padding: 2px 10px; }}"
+            )
+        else:
+            self._focus_btn.setStyleSheet(
+                f"QPushButton {{ background-color: {COLORS['bg_card']};"
+                f" border: 1px solid {COLORS['border']};"
+                f" border-radius: 6px;"
+                f" color: {COLORS['text_secondary']};"
+                f" font-size: 12px;"
+                f" padding: 2px 10px; }}"
+            )
+
     def _build_top_bar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(52)
@@ -95,21 +116,26 @@ class ComparisonViewer(QWidget):
         h.setSpacing(12)
 
         back_btn = QPushButton(self.i18n.t("browser.back"))
-        back_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
+        ###old skywalker
+        set_btn_style(back_btn)
+        ###end
+        back_btn.setToolTip(self.i18n.t("browser.title"))
         back_btn.setObjectName("secondary")
         back_btn.setFixedHeight(32)
-        #back_btn.setMinimumWidth(100)
+        #back_btn.setMinimumWidth(50)
         back_btn.clicked.connect(self.close_requested)
         h.addWidget(back_btn)
 
+        # 焦点图层开关按钮
+        self._focus_btn = QPushButton(self.i18n.t("browser.focus_toggle"))
+        #set_btn_style(self._focus_btn)
+        self._focus_btn.setFixedHeight(32)
+        self._focus_btn.setMinimumWidth(60)
+        self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
+        self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
+        h.addWidget(self._focus_btn)
+        # 初始状态：焦点开启 → active 样式
+        self._update_focus_btn_style(True)
         h.addStretch()
 
         # 左侧文件名 + 评分
@@ -272,6 +298,9 @@ class ComparisonViewer(QWidget):
     # ------------------------------------------------------------------
     #  内部
     # ------------------------------------------------------------------
+    def _on_focus_btn_clicked(self):
+        self._img_a.toggle_focus()
+        self._update_focus_btn_style(self._img_a.focus_visible)
 
     def _refresh_labels(self):
         """刷新顶栏文件名和评分标签。"""

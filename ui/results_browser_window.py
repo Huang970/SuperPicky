@@ -30,7 +30,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QProcess
 from PySide6.QtGui import QAction, QKeyEvent, QIcon, QFont
 
-from ui.styles import COLORS, GLOBAL_STYLE, FONTS
+from ui.styles import COLORS, GLOBAL_STYLE, FONTS,set_btn_style
 from ui.filter_panel import FilterPanel
 from ui.thumbnail_grid import ThumbnailGrid
 from ui.detail_panel import DetailPanel
@@ -41,6 +41,23 @@ from typing import Optional
 from tools.i18n import get_i18n
 from tools.report_db import ReportDB
 
+
+# def set_btn_style(btn:QPushButton):
+#     btn.setStyleSheet(f"""
+#         QPushButton {{
+#             background-color: #1f1f1f;
+#             color:  #00d4aa;
+#             border: 1px solid #00ffcc;
+#             border-radius: 6px;
+#             font-size: 13px;
+#             padding: 2px 12px;
+#         }}
+#         QPushButton:hover {{
+#             color: #ffffff;
+#             background-color: #00e6b8;
+#             border: 1px solid #00a080;
+#         }}
+#     """)
 
 def _photo_identity(photo: dict) -> tuple:
     return (photo.get("source_dir") or "", photo.get("filename") or "")
@@ -537,15 +554,7 @@ class ResultsBrowserWindow(QMainWindow):
         back_btn.setObjectName("tertiary")
         back_btn.setFixedHeight(32)
         back_btn.setFixedWidth(50)
-        back_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
+        set_btn_style(back_btn)
         back_btn.setToolTip(self.i18n.t("browser.back_tooltip"))
         back_btn.clicked.connect(self._go_back_to_main)
         layout.addWidget(back_btn)
@@ -578,15 +587,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._copyTo_btn.setFixedHeight(32)
         self._copyTo_btn.setFixedWidth(50)
         self._copyTo_btn.setToolTip("将选定的照片复制到指定目录")
-        self._copyTo_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
+        set_btn_style(self._copyTo_btn)
         self._copyTo_btn.clicked.connect(self._copy_selected_photos)
         layout.addWidget(self._copyTo_btn)
 
@@ -596,15 +597,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._browser_btn.setFixedHeight(32)
         self._browser_btn.setFixedWidth(62)
         self._browser_btn.setToolTip("选定照片复制目录")
-        self._browser_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
+        set_btn_style(self._browser_btn)
         self._browser_btn.clicked.connect(self._browser_btn_request)
         layout.addWidget(self._browser_btn)
 
@@ -622,15 +615,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._compare_btn.setObjectName("secondary")
         self._compare_btn.setFixedHeight(32)
         self._compare_btn.setFixedWidth(50)
-        self._compare_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
+        set_btn_style(self._compare_btn)
         self._compare_btn.hide()
         self._compare_btn.clicked.connect(self._enter_comparison)
         layout.addWidget(self._compare_btn)
@@ -662,7 +647,6 @@ class ResultsBrowserWindow(QMainWindow):
 
         return bar
 
-    #old skywalker.
     def _copy_selected_photos(self):
 
         # 1. 获取多选的照片数据

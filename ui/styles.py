@@ -3,6 +3,24 @@
 SuperPicky - UI 样式定义
 极简艺术风格 (Minimalist Artistic Design)
 """
+from PySide6.QtWidgets import QPushButton
+def set_btn_style(btn: QPushButton):
+    """公共按钮样式（全局函数，无任何依赖，不会循环导入）"""
+    btn.setStyleSheet("""
+        QPushButton {
+            background-color: #1f1f1f;
+            border: 1px solid #00ffcc;
+            border-radius: 6px;
+            color: #00d4aa;
+            font-size: 13px;
+            padding: 2px 10px;
+        }
+        QPushButton:hover {
+            color: #ffffff;
+            border: 1px solid #00a080;
+        }
+    """)
+#background-color: #00e6b8;
 
 # ==================== 色彩系统 ====================
 # 极简色板 - 黑白为主，单一强调色

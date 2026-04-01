@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QTimer, Slot, QEvent
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush
 
-from ui.styles import COLORS, FONTS
+from ui.styles import COLORS, FONTS,set_btn_style
 
 
 # 焦点状态颜色映射
@@ -764,17 +764,10 @@ class FullscreenViewer(QWidget):
         h.setSpacing(12)
         h.addSpacing(20)
         # 返回按钮
-        ###old skywalker
         back_btn = QPushButton(self.i18n.t("browser.back"))
-        back_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
+        ###old skywalker
+        set_btn_style(back_btn)
+        back_btn.setToolTip(self.i18n.t("browser.title"))
         ###end
         back_btn.setObjectName("secondary")
         back_btn.setFixedHeight(36)
@@ -785,20 +778,9 @@ class FullscreenViewer(QWidget):
         # 焦点图层开关按钮
         self._focus_btn = QPushButton(self.i18n.t("browser.focus_toggle"))
         self._focus_btn.setFixedHeight(36)
-        self._focus_btn.setMinimumWidth(80)
+        self._focus_btn.setMinimumWidth(60)
         self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
-        #old skywalker
-        self._focus_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
-        ###end
         h.addWidget(self._focus_btn)
         # 初始状态：焦点开启 → active 样式
         self._update_focus_btn_style(True)

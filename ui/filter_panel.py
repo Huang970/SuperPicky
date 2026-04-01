@@ -221,15 +221,8 @@ class FilterPanel(QWidget):
         reset_btn = QPushButton(self.i18n.t("browser.reset_filter"))
         reset_btn.setObjectName("secondary")
         ###added by old skywalker
-        reset_btn.setStyleSheet(
-            "QPushButton { background-color: #1a3a1a;"
-            " border: 1px solid #33cc33;"
-            " border-radius: 6px;"
-            " color: #66ff66;"
-            " font-size: 12px;"
-            " padding: 2px 12px; }"
-            "QPushButton:hover { background-color: #33cc33; color: #ffffff; }"
-        )
+        from ui.results_browser_window import set_btn_style
+        set_btn_style(reset_btn)
         ###end
         reset_btn.clicked.connect(self.reset_all)
         layout.addWidget(reset_btn)

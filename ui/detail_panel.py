@@ -258,6 +258,18 @@ class DetailPanel(QWidget):
         rating_row.addWidget(self._rating_label)
         rating_row.addStretch()
 
+        ###old skywalker
+        self._favourite_label = QLabel("")
+        self._favourite_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: {COLORS['star_gold']};
+                        font-size: 20px;
+                        background: transparent;
+                    }}
+                """)
+        rating_row.addWidget(self._favourite_label)
+        ###end
+
         dec_btn = QPushButton("▼")
         dec_btn.setFixedSize(28, 28)
         dec_btn.setToolTip(self.i18n.t("labels.rating_dec_tooltip"))
@@ -463,6 +475,14 @@ class DetailPanel(QWidget):
         label = self.i18n.t("browser.meta_caption")
         self._caption_toggle_btn.setText(f"{arrow} {label}")
 
+    ###old skywalker
+    def _set_favourite_label(self,new_val):
+        if new_val >= 4:
+            self._favourite_label.setText("❤️")
+        else:
+            self._favourite_label.setText("")
+    ###end
+
     def _on_rating_dec(self):
         """▼ 按钮：评分 -1（最低 -1）。"""
         if not self._current_photo:
@@ -471,6 +491,9 @@ class DetailPanel(QWidget):
         new_val = max(-1, current - 1)
         if new_val == current:
             return
+        ###old skywalker
+        self._set_favourite_label(new_val)
+        ###end
         self._current_photo["rating"] = new_val
         self._refresh_metadata()
         self.rating_change_requested.emit(dict(self._current_photo), new_val)
@@ -483,6 +506,9 @@ class DetailPanel(QWidget):
         new_val = min(5, current + 1)
         if new_val == current:
             return
+        ###old skywalker
+        self._set_favourite_label(new_val)
+        ###end
         self._current_photo["rating"] = new_val
         self._refresh_metadata()
         self.rating_change_requested.emit(dict(self._current_photo), new_val)
@@ -686,6 +712,9 @@ class DetailPanel(QWidget):
             -1: "—",
         }
         self._rating_label.setText(_rating_text.get(rating, _unknown))
+        ###old skywalker
+        self._set_favourite_label(rating)
+        ###end
 
         # 对焦
         focus = p.get("focus_status") or _unknown
