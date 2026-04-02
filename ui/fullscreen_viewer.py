@@ -16,7 +16,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, QThread, QTimer, Slot, QEvent
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush
 
-from ui.styles import COLORS, FONTS, set_btn_style, update_focus_btn_style
+from ui.styles import COLORS, FONTS
+from ui.set_qss_util import update_toogle_btn_style, set_btn_style
 
 # 焦点状态颜色映射
 _FOCUS_COLORS = {
@@ -782,8 +783,7 @@ class FullscreenViewer(QWidget):
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
         h.addWidget(self._focus_btn)
         # 初始状态：焦点开启 → active 样式
-        #self._update_focus_btn_style(True)
-        update_focus_btn_style(self._focus_btn, True)
+        update_toogle_btn_style(self._focus_btn, True)
 
 
         # 功能2：锁定缩放按钮
@@ -894,8 +894,7 @@ class FullscreenViewer(QWidget):
     def toggle_focus(self):
         """切换焦点叠加（供外部 F 键调用 + 内部按钮调用）。"""
         self._img_label.toggle_focus()
-        #self._update_focus_btn_style(self._img_label.focus_visible)
-        update_focus_btn_style(self._focus_btn, self._img_label.focus_visible)
+        update_toogle_btn_style(self._focus_btn, self._img_label.focus_visible)
 
     def _on_focus_btn_clicked(self):
         self.toggle_focus()
@@ -949,27 +948,6 @@ class FullscreenViewer(QWidget):
         """发出删除信号（携带当前 photo dict），由 ResultsBrowserWindow 处理。"""
         if self._current_photo:
             self.delete_requested.emit(self._current_photo)
-
-    # def _update_focus_btn_style(self, visible: bool):
-    #     """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
-    #     if visible:
-    #         self._focus_btn.setStyleSheet(
-    #             f"QPushButton {{ background-color: {COLORS['bg_input']};"
-    #             f" border: 1px solid {COLORS['accent']};"
-    #             f" border-radius: 6px;"
-    #             f" color: {COLORS['accent']};"
-    #             f" font-size: 12px;"
-    #             f" padding: 2px 10px; }}"
-    #         )
-    #     else:
-    #         self._focus_btn.setStyleSheet(
-    #             f"QPushButton {{ background-color: {COLORS['bg_card']};"
-    #             f" border: 1px solid {COLORS['border']};"
-    #             f" border-radius: 6px;"
-    #             f" color: {COLORS['text_secondary']};"
-    #             f" font-size: 12px;"
-    #             f" padding: 2px 10px; }}"
-    #         )
 
     # ------------------------------------------------------------------
     #  公共接口

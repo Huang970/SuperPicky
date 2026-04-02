@@ -30,7 +30,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QProcess
 from PySide6.QtGui import QAction, QKeyEvent, QIcon, QFont
 
-from ui.styles import COLORS, GLOBAL_STYLE, FONTS,set_btn_style
+from ui.styles import COLORS, GLOBAL_STYLE, FONTS
+from ui.set_qss_util import set_btn_style
 from ui.filter_panel import FilterPanel
 from ui.thumbnail_grid import ThumbnailGrid
 from ui.detail_panel import DetailPanel
@@ -40,24 +41,6 @@ from typing import Optional
 
 from tools.i18n import get_i18n
 from tools.report_db import ReportDB
-
-
-# def set_btn_style(btn:QPushButton):
-#     btn.setStyleSheet(f"""
-#         QPushButton {{
-#             background-color: #1f1f1f;
-#             color:  #00d4aa;
-#             border: 1px solid #00ffcc;
-#             border-radius: 6px;
-#             font-size: 13px;
-#             padding: 2px 12px;
-#         }}
-#         QPushButton:hover {{
-#             color: #ffffff;
-#             background-color: #00e6b8;
-#             border: 1px solid #00a080;
-#         }}
-#     """)
 
 def _photo_identity(photo: dict) -> tuple:
     return (photo.get("source_dir") or "", photo.get("filename") or "")

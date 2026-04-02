@@ -3,47 +3,8 @@
 SuperPicky - UI 样式定义
 极简艺术风格 (Minimalist Artistic Design)
 """
-from PySide6.QtWidgets import QPushButton
 
-def update_focus_btn_style(focus_btn: QPushButton, visible: bool) -> None:
-    """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
-    if visible:
-        focus_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {COLORS['bg_input']};"
-            f" border: 1px solid {COLORS['accent']};"
-            f" border-radius: 6px;"
-            f" color: {COLORS['accent']};"
-            f" font-size: 12px;"
-            f" padding: 2px 10px; }}"
-        )
-    else:
-        focus_btn.setStyleSheet(
-            f"QPushButton {{ background-color: {COLORS['bg_card']};"
-            f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px;"
-            f" color: {COLORS['text_secondary']};"
-            f" font-size: 12px;"
-            f" padding: 2px 10px; }}"
-        )
-
-def set_btn_style(btn: QPushButton):
-    """公共按钮样式（全局函数，无任何依赖，不会循环导入）"""
-    btn.setStyleSheet("""
-        QPushButton {
-            background-color: #1f1f1f;
-            border: 1px solid #00ffcc;
-            border-radius: 6px;
-            color: #00d4aa;
-            font-size: 13px;
-            padding: 2px 10px;
-        }
-        QPushButton:hover {
-            color: #ffffff;
-            border: 1px solid #00a080;
-        }
-    """)
-#background-color: #00e6b8;
-
+#'text_tertiary': '#909090',  # 第三级文字
 # ==================== 色彩系统 ====================
 # 极简色板 - 黑白为主，单一强调色
 COLORS = {
@@ -57,7 +18,7 @@ COLORS = {
     # 文字层级
     'text_primary': '#fafafa',       # 主文字
     'text_secondary': '#a1a1a1',     # 次要文字
-    'text_tertiary': '#909090',      # 第三级文字
+    'text_tertiary': '#a1a1a1',      # 第三级文字
     'text_muted': '#404040',         # 静默文字
 
     # 强调色 - 优雅的青绿色

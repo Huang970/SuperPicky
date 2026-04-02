@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeyEvent
 
-from ui.styles import COLORS, FONTS, set_btn_style, update_focus_btn_style
+from ui.styles import (COLORS, FONTS)
+from ui.set_qss_util import (update_toogle_btn_style, set_btn_style)
 from ui.fullscreen_viewer import _FullscreenImageLabel, _ImageLoader
 
 
@@ -81,27 +82,6 @@ class ComparisonViewer(QWidget):
         # 底栏
         layout.addWidget(self._build_bottom_bar())
 
-    # def _update_focus_btn_style(self, visible: bool):
-    #     """visible=True → accent 激活色；False → 灰色 secondary 样式。"""
-    #     if visible:
-    #         self._focus_btn.setStyleSheet(
-    #             f"QPushButton {{ background-color: {COLORS['bg_input']};"
-    #             f" border: 1px solid {COLORS['accent']};"
-    #             f" border-radius: 6px;"
-    #             f" color: {COLORS['accent']};"
-    #             f" font-size: 12px;"
-    #             f" padding: 2px 10px; }}"
-    #         )
-    #     else:
-    #         self._focus_btn.setStyleSheet(
-    #             f"QPushButton {{ background-color: {COLORS['bg_card']};"
-    #             f" border: 1px solid {COLORS['border']};"
-    #             f" border-radius: 6px;"
-    #             f" color: {COLORS['text_secondary']};"
-    #             f" font-size: 12px;"
-    #             f" padding: 2px 10px; }}"
-    #         )
-
     def _build_top_bar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(52)
@@ -111,34 +91,53 @@ class ComparisonViewer(QWidget):
                 border-bottom: 1px solid {COLORS['border_subtle']};
             }}
         """)
-        h = QHBoxLayout(bar)
-        h.setContentsMargins(16, 0, 16, 0)
-        h.setSpacing(12)
 
+        # 外层总布局：修正上下边距，避免控件被挤没
+        main_h = QHBoxLayout(bar)
+        main_h.setContentsMargins(16, 8, 16, 8)  # 上下仅留8px，给32px按钮留足空间
+        main_h.setSpacing(12)  # 左右分栏之间的间距
+
+        # ======================
+        # 左侧区域 (占 1 份宽度)
+        # ======================
+        left_widget = QWidget()
+        left_layout = QHBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)  # 内层边距清零，避免叠加
+        left_layout.setSpacing(12)  # 按钮/标签之间的间距
+
+        # 返回按钮
         back_btn = QPushButton(self.i18n.t("browser.back"))
-        ###old skywalker
         set_btn_style(back_btn)
-        ###end
         back_btn.setToolTip(self.i18n.t("browser.title"))
         back_btn.setObjectName("secondary")
         back_btn.setFixedHeight(32)
-        #back_btn.setMinimumWidth(50)
         back_btn.clicked.connect(self.close_requested)
-        h.addWidget(back_btn)
+        left_layout.addWidget(back_btn)
 
         # 焦点图层开关按钮
         self._focus_btn = QPushButton(self.i18n.t("browser.focus_toggle"))
-        #set_btn_style(self._focus_btn)
         self._focus_btn.setFixedHeight(32)
         self._focus_btn.setMinimumWidth(60)
         self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
-        h.addWidget(self._focus_btn)
-        # 初始状态：焦点开启 → active 样式
-        update_focus_btn_style(self._focus_btn,True)
-        h.addStretch()
+        left_layout.addWidget(self._focus_btn)
+        update_toogle_btn_style(self._focus_btn, True)
 
-        # 左侧文件名 + 评分
+        # 伸缩器：把后面的文件名挤到右侧
+        left_layout.addStretch()
+
+        # 左侧文件名 + 评分（居右）
+        self._rating_a = QLabel("")
+        self._rating_a.setStyleSheet(f"""
+            QLabel {{
+                color: {COLORS['star_gold']};
+                font-size: 14px;
+                background: transparent;
+                min-width: 60px;
+            }}
+        """)
+        left_layout.addWidget(self._rating_a)
+
         self._name_a = QLabel("")
         self._name_a.setStyleSheet(f"""
             QLabel {{
@@ -149,37 +148,17 @@ class ComparisonViewer(QWidget):
             }}
         """)
         self._name_a.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        h.addWidget(self._name_a)
+        left_layout.addWidget(self._name_a)
 
-        self._rating_a = QLabel("")
-        self._rating_a.setStyleSheet(f"""
-            QLabel {{
-                color: {COLORS['star_gold']};
-                font-size: 14px;
-                background: transparent;
-                min-width: 60px;
-            }}
-        """)
-        self._rating_a.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        h.addWidget(self._rating_a)
+        # ======================
+        # 右侧区域 (占 1 份宽度)
+        # ======================
+        right_widget = QWidget()
+        right_layout = QHBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)  # 内层边距清零
+        right_layout.setSpacing(12)
 
-        sep = QLabel("|")
-        sep.setStyleSheet(f"color: {COLORS['border']}; font-size: 16px; background: transparent;")
-        h.addWidget(sep)
-
-        # 右侧文件名 + 评分
-        self._rating_b = QLabel("")
-        self._rating_b.setStyleSheet(f"""
-            QLabel {{
-                color: {COLORS['star_gold']};
-                font-size: 14px;
-                background: transparent;
-                min-width: 60px;
-            }}
-        """)
-        self._rating_b.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        h.addWidget(self._rating_b)
-
+        # 右侧文件名 + 评分（居左）
         self._name_b = QLabel("")
         self._name_b.setStyleSheet(f"""
             QLabel {{
@@ -189,10 +168,27 @@ class ComparisonViewer(QWidget):
                 background: transparent;
             }}
         """)
-        self._name_b.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        h.addWidget(self._name_b)
+        right_layout.addWidget(self._name_b)
 
-        h.addStretch()
+        self._rating_b = QLabel("")
+        self._rating_b.setStyleSheet(f"""
+            QLabel {{
+                color: {COLORS['star_gold']};
+                font-size: 14px;
+                background: transparent;
+                min-width: 60px;
+            }}
+        """)
+        right_layout.addWidget(self._rating_b)
+
+        # 伸缩器：让内容居左
+        right_layout.addStretch()
+
+        # ======================
+        # 正确添加左右分栏
+        # ======================
+        main_h.addWidget(left_widget, stretch=1)
+        main_h.addWidget(right_widget, stretch=1)
         return bar
 
     def _build_bottom_bar(self) -> QWidget:
@@ -300,8 +296,7 @@ class ComparisonViewer(QWidget):
     # ------------------------------------------------------------------
     def _on_focus_btn_clicked(self):
         self._img_a.toggle_focus()
-        #self._update_focus_btn_style(self._img_a.focus_visible)
-        update_focus_btn_style(self._focus_btn,self._img_a.focus_visible)
+        update_toogle_btn_style(self._focus_btn,self._img_a.focus_visible)
 
     def _refresh_labels(self):
         """刷新顶栏文件名和评分标签。"""

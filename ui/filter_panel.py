@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal
 
+from ui.set_qss_util import set_btn_style
 from ui.styles import COLORS, FONTS
 
 
@@ -221,7 +222,6 @@ class FilterPanel(QWidget):
         reset_btn = QPushButton(self.i18n.t("browser.reset_filter"))
         reset_btn.setObjectName("secondary")
         ###added by old skywalker
-        from ui.results_browser_window import set_btn_style
         set_btn_style(reset_btn)
         ###end
         reset_btn.clicked.connect(self.reset_all)
@@ -381,29 +381,76 @@ class FilterPanel(QWidget):
     #  飞行 checkbox（多选）
     # ------------------------------------------------------------------
 
+    # def _build_flight_checkboxes(self) -> QWidget:
+    #     """飞行状态：2列 checkbox，默认全选。"""
+    #     w = QWidget()
+    #     w.setStyleSheet("background: transparent;")
+    #     grid = QGridLayout(w)
+    #     grid.setContentsMargins(0, 0, 0, 0)
+    #     grid.setSpacing(6)
+    #
+    #     options = [
+    #         (1, self.i18n.t("browser.flying_option"),     0, 0),
+    #         (0, self.i18n.t("browser.non_flying_option"), 0, 1),
+    #     ]
+    #
+    #     self._flight_cbs: dict = {}
+    #     for value, label_text, row_idx, col_idx in options:
+    #         cb = QCheckBox(label_text)
+    #         cb.setChecked(True)
+    #         cb.setStyleSheet(
+    #             f"QCheckBox {{ color: {COLORS['text_secondary']}; font-size: 12px; }}"
+    #             f"QCheckBox::indicator {{ width: 12px; height: 12px; }}"
+    #         )
+    #         cb.stateChanged.connect(self._emit_filters)
+    #         self._flight_cbs[value] = cb
+    #         grid.addWidget(cb, row_idx, col_idx)
+    #
+    #     return w
     def _build_flight_checkboxes(self) -> QWidget:
-        """飞行状态：2列 checkbox，默认全选。"""
+        """飞行状态：2列 checkbox，与上方对焦复选框间距完全对齐"""
         w = QWidget()
         w.setStyleSheet("background: transparent;")
-        grid = QGridLayout(w)
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(6)
+
+        # 保持和上排一致的 QHBoxLayout
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(24)
 
         options = [
-            (1, self.i18n.t("browser.flying_option"),     0, 0),
-            (0, self.i18n.t("browser.non_flying_option"), 0, 1),
+            (1, self.i18n.t("browser.flying_option")),
+            (0, self.i18n.t("browser.non_flying_option")),
         ]
 
         self._flight_cbs: dict = {}
-        for value, label_text, row_idx, col_idx in options:
+        for value, label_text in options:
             cb = QCheckBox(label_text)
             cb.setChecked(True)
-            cb.setStyleSheet(
-                f"QCheckBox {{ color: {COLORS['text_secondary']}; font-size: 12px; }}"
-            )
+            # 样式完全复刻上排，保证视觉统一
+            cb.setStyleSheet(f"""
+                QCheckBox {{
+                    color: {COLORS['text_secondary']};
+                    font-size: 12px;
+                    spacing: 4px;
+                }}
+                QCheckBox::indicator {{
+                    width: 14px;
+                    height: 14px;
+                    border-radius: 3px;
+                    border: 1px solid {COLORS['border']};
+                    background: transparent;
+                }}
+                QCheckBox::indicator:checked {{
+                    background-color: {COLORS['accent']};
+                    border-color: {COLORS['accent']};
+                }}
+            """)
             cb.stateChanged.connect(self._emit_filters)
             self._flight_cbs[value] = cb
-            grid.addWidget(cb, row_idx, col_idx)
+            row.addWidget(cb)
+
+        # 强制左对齐，和上排完全一致
+        row.setAlignment(Qt.AlignLeft)
 
         return w
 
