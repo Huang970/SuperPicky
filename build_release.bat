@@ -13,7 +13,7 @@ set "ZIP_COPY_DIR="
 
 if "!OUT_DIST_DIR!"=="" set "OUT_DIST_DIR=dist"
 
-set "BUILD_ZIP=1"
+set "BUILD_ZIP=0"
 
 call :parse_args %*
 if errorlevel 1 exit /b 1

@@ -778,7 +778,7 @@ class FullscreenViewer(QWidget):
         # 焦点图层开关按钮
         self._focus_btn = QPushButton(self.i18n.t("browser.focus_toggle"))
         self._focus_btn.setFixedHeight(36)
-        self._focus_btn.setMinimumWidth(60)
+        self._focus_btn.setMinimumWidth(80)
         self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
         h.addWidget(self._focus_btn)
@@ -795,8 +795,35 @@ class FullscreenViewer(QWidget):
         h.addWidget(self._lock_zoom_btn)
 
         h.addStretch()
+        # _nav_btn_style = (
+        #     f"QPushButton {{ background-color: {COLORS['bg_card']};"
+        #     f" border: 1px solid {COLORS['border']};"
+        #     f" border-radius: 6px;"
+        #     f" color: {COLORS['text_secondary']};"
+        #     f" font-size: 12px;"
+        #     f" padding: 2px 10px; }}"
+        # )
+
+        self.prev_btn = QPushButton(self.i18n.t("browser.prev_arrow"))
+        self.prev_btn.setFixedHeight(36)
+        self.prev_btn.setFixedWidth(80)
+        set_btn_style(self.prev_btn)
+        #self.prev_btn.setStyleSheet(_nav_btn_style)
+        self.prev_btn.clicked.connect(self.prev_requested)
+        self.prev_btn.hide()
+        h.addWidget(self.prev_btn)
+
+        self.next_btn = QPushButton(self.i18n.t("browser.next_arrow"))
+        self.next_btn.setFixedHeight(36)
+        self.next_btn.setFixedWidth(80)
+        set_btn_style(self.next_btn)
+        #self.next_btn.setStyleSheet(_nav_btn_style)
+        self.next_btn.clicked.connect(self.next_requested)
+        self.next_btn.hide()
+        h.addWidget(self.next_btn)
+
         self._burst_info_btn = QPushButton("")
-        self._burst_info_btn.setFixedHeight(30)
+        self._burst_info_btn.setFixedHeight(36)
         self._burst_info_btn.hide()
         self._burst_info_btn.clicked.connect(self._on_burst_info_clicked)
         h.addWidget(self._burst_info_btn)
@@ -860,30 +887,6 @@ class FullscreenViewer(QWidget):
 
         h.addStretch()
 
-        _nav_btn_style = (
-            f"QPushButton {{ background-color: {COLORS['bg_card']};"
-            f" border: 1px solid {COLORS['border']};"
-            f" border-radius: 6px;"
-            f" color: {COLORS['text_secondary']};"
-            f" font-size: 12px;"
-            f" padding: 2px 10px; }}"
-        )
-
-        prev_btn = QPushButton(self.i18n.t("browser.prev_arrow"))
-        prev_btn.setFixedHeight(32)
-        prev_btn.setFixedWidth(100)
-        prev_btn.setStyleSheet(_nav_btn_style)
-        prev_btn.clicked.connect(self.prev_requested)
-        h.addWidget(prev_btn)
-
-        next_btn = QPushButton(self.i18n.t("browser.next_arrow"))
-        next_btn.setFixedHeight(32)
-        next_btn.setFixedWidth(100)
-        next_btn.setStyleSheet(_nav_btn_style)
-        next_btn.clicked.connect(self.next_requested)
-        h.addWidget(next_btn)
-
-        h.addStretch()
 
         return bar
 
@@ -1063,17 +1066,47 @@ class FullscreenViewer(QWidget):
         self.setFocus()
 
     def _update_burst_info(self, photo: dict):
+        # 统一获取连拍相关参数
         burst_pos = photo.get("burst_position_index")
         burst_total = photo.get("burst_total_count")
         burst_count = photo.get("burst_count", 1)
         is_group = photo.get("is_burst_group") and burst_count > 1
 
+        # 情况1：显示连拍序号（如 3/10）
         if burst_pos and burst_total:
             self._burst_info_btn.setText(f"{burst_pos}/{burst_total}")
-            self._burst_info_btn.setEnabled(True)
-            self._burst_info_btn.setCursor(Qt.PointingHandCursor)
-            self._burst_info_btn.setToolTip("\u70b9\u51fb\u6536\u56de\u8fde\u62cd\u5e8f\u5217" if not str(getattr(self.i18n, "current_lang", "")).startswith("en") else "Click to collapse burst sequence")
-            self._burst_info_btn.setStyleSheet(
+            self._set_burst_button_style(position_mode=True)
+            self.prev_btn.show()
+            self.next_btn.show()
+            return
+
+        # 情况2：显示连拍组（如 连拍序列(8张)）
+        if is_group:
+            lang = getattr(self.i18n, "current_lang", "")
+            text = f"Burst Sequence ({burst_count})" if str(lang).startswith("en") else f"连拍序列（{burst_count}张）"
+            self._burst_info_btn.setText(text)
+            self._set_burst_button_style(position_mode=False)
+            self.prev_btn.hide()
+            self.next_btn.hide()
+            return
+
+        # 无连拍信息：隐藏按钮
+        self._burst_info_btn.hide()
+        self.prev_btn.hide()
+        self.next_btn.hide()
+
+    def _set_burst_button_style(self, position_mode: bool):
+        """统一设置连拍按钮样式、状态、光标、提示（抽离重复代码）"""
+        btn = self._burst_info_btn
+        # 基础通用设置
+        btn.setEnabled(True)
+        btn.setCursor(Qt.PointingHandCursor)
+
+        if position_mode:
+            # 样式：序号模式（高亮样式）
+            btn.setToolTip("点击收回连拍序列" if not str(getattr(self.i18n, "current_lang", "")).startswith(
+                "en") else "Click to collapse burst sequence")
+            btn.setStyleSheet(
                 f"QPushButton {{ background-color: {COLORS['bg_input']};"
                 f" border: 1px solid {COLORS['accent']};"
                 f" border-radius: 14px;"
@@ -1085,17 +1118,10 @@ class FullscreenViewer(QWidget):
                 f" border-color: {COLORS['accent']};"
                 f" color: {COLORS['accent']}; }}"
             )
-            self._burst_info_btn.show()
-            return
-
-        if is_group:
-            lang = getattr(self.i18n, "current_lang", "")
-            text = f"Burst Sequence ({burst_count})" if str(lang).startswith("en") else f"\u8fde\u62cd\u5e8f\u5217\uff08{burst_count}\u5f20\uff09"
-            self._burst_info_btn.setText(text)
-            self._burst_info_btn.setEnabled(True)
-            self._burst_info_btn.setCursor(Qt.PointingHandCursor)
-            self._burst_info_btn.setToolTip("")
-            self._burst_info_btn.setStyleSheet(
+        else:
+            # 样式：组模式（普通灰色样式）
+            btn.setToolTip("")
+            btn.setStyleSheet(
                 f"QPushButton {{ background-color: {COLORS['bg_card']};"
                 f" border: 1px solid {COLORS['border']};"
                 f" border-radius: 14px;"
@@ -1105,10 +1131,56 @@ class FullscreenViewer(QWidget):
                 f"QPushButton:hover {{ border-color: {COLORS['accent']};"
                 f" color: {COLORS['accent']}; }}"
             )
-            self._burst_info_btn.show()
-            return
 
-        self._burst_info_btn.hide()
+        btn.show()
+
+    # def _update_burst_info(self, photo: dict):
+    #     burst_pos = photo.get("burst_position_index")
+    #     burst_total = photo.get("burst_total_count")
+    #     burst_count = photo.get("burst_count", 1)
+    #     is_group = photo.get("is_burst_group") and burst_count > 1
+    #
+    #     if burst_pos and burst_total:
+    #         self._burst_info_btn.setText(f"{burst_pos}/{burst_total}")
+    #         self._burst_info_btn.setEnabled(True)
+    #         self._burst_info_btn.setCursor(Qt.PointingHandCursor)
+    #         self._burst_info_btn.setToolTip("\u70b9\u51fb\u6536\u56de\u8fde\u62cd\u5e8f\u5217" if not str(getattr(self.i18n, "current_lang", "")).startswith("en") else "Click to collapse burst sequence")
+    #         self._burst_info_btn.setStyleSheet(
+    #             f"QPushButton {{ background-color: {COLORS['bg_input']};"
+    #             f" border: 1px solid {COLORS['accent']};"
+    #             f" border-radius: 14px;"
+    #             f" color: {COLORS['accent']};"
+    #             f" font-size: 12px;"
+    #             f" font-weight: 600;"
+    #             f" padding: 2px 12px; }}"
+    #             f"QPushButton:hover {{ background-color: {COLORS['bg_card']};"
+    #             f" border-color: {COLORS['accent']};"
+    #             f" color: {COLORS['accent']}; }}"
+    #         )
+    #         self._burst_info_btn.show()
+    #         return
+    #
+    #     if is_group:
+    #         lang = getattr(self.i18n, "current_lang", "")
+    #         text = f"Burst Sequence ({burst_count})" if str(lang).startswith("en") else f"\u8fde\u62cd\u5e8f\u5217\uff08{burst_count}\u5f20\uff09"
+    #         self._burst_info_btn.setText(text)
+    #         self._burst_info_btn.setEnabled(True)
+    #         self._burst_info_btn.setCursor(Qt.PointingHandCursor)
+    #         self._burst_info_btn.setToolTip("")
+    #         self._burst_info_btn.setStyleSheet(
+    #             f"QPushButton {{ background-color: {COLORS['bg_card']};"
+    #             f" border: 1px solid {COLORS['border']};"
+    #             f" border-radius: 14px;"
+    #             f" color: {COLORS['text_secondary']};"
+    #             f" font-size: 12px;"
+    #             f" padding: 2px 12px; }}"
+    #             f"QPushButton:hover {{ border-color: {COLORS['accent']};"
+    #             f" color: {COLORS['accent']}; }}"
+    #         )
+    #         self._burst_info_btn.show()
+    #         return
+    #
+    #     self._burst_info_btn.hide()
 
     # ------------------------------------------------------------------
     #  内部
@@ -1122,11 +1194,21 @@ class FullscreenViewer(QWidget):
         if tjp and os.path.exists(tjp):
             return tjp
         # 回退到原始 JPEG
-        op = photo.get("original_path") or photo.get("current_path")
+
+        # op = photo.get("original_path") or photo.get("current_path")
+        # if op and os.path.exists(op):
+        #     ext = os.path.splitext(op)[1].lower()
+        #     if ext in ('.jpg', '.jpeg'):
+        #         return op
+        ###old skywalkder
+        op = photo.get("current_path") or photo.get("original_path")
+        if op :
+            op = op[:-4] + ".JPG"
         if op and os.path.exists(op):
             ext = os.path.splitext(op)[1].lower()
             if ext in ('.jpg', '.jpeg'):
                 return op
+        ###end
         return None
 
     @Slot(object)
