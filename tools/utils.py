@@ -6,10 +6,40 @@ import os
 import csv
 from datetime import datetime
 from .file_utils import ensure_hidden_directory
+from PySide6.QtGui import QImageReader, QImage, QTransform
+
+def load_image_with_exif_rotation(filepath: str) -> QImage:
+    """
+    全局通用：根据 EXIF 自动旋转图片，不修改原图
+    所有地方都能调用
+    """
+    if not filepath or not os.path.isfile(filepath):
+        return QImage()
+
+    reader = QImageReader(filepath)
+    reader.setAutoTransform(True)  # 自动根据 EXIF 转正
+    return reader.read()
+
+def correct_image_orientation(img: QImage) -> QImage:
+    if img.isNull():
+        return img
+
+    orient = img.text("Orientation")
+    transform = QTransform()
+
+    if orient == "6":
+        transform.rotate(90)
+    elif orient == "8":
+        transform.rotate(270)
+    elif orient == "3":
+        transform.rotate(180)
+    elif orient == "1":
+        return img
+
+    return img.transformed(transform).copy()
 
 # 跟踪当前活跃的工作目录，供 sys.excepthook 写入错误日志使用
 _active_log_directory: str = None
-
 
 def get_active_log_directory() -> str:
     """返回当前活跃的工作目录路径（用于错误日志定位）"""

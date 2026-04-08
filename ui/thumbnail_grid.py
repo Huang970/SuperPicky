@@ -478,11 +478,11 @@ class ThumbnailCard(QFrame):
         # 选中状态：2px 实线青绿框
         if getattr(self, '_selected', False):
             pen = QPen(QColor(COLORS['accent']))  # #00d4aa
-            pen.setWidth(2)
+            pen.setWidth(3)
             pen.setStyle(Qt.SolidLine)
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
-            painter.drawRect(1, 1, w - 2, h - 2)
+            painter.drawRect(1, 1, w - 3, h - 3)
 
         painter.end()
         self.img_label.setPixmap(overlay)
@@ -592,6 +592,7 @@ class ThumbnailGrid(QScrollArea):
 
     def __init__(self, i18n, parent=None):
         super().__init__(parent)
+        self._target_select_photo = None  # 加在这里
         self.i18n = i18n
         self._thumb_size = _DEFAULT_THUMB_SIZE
         self._photos: list = []
@@ -840,6 +841,20 @@ class ThumbnailGrid(QScrollArea):
             self._loader.signals.thumbnail_ready.connect(self._on_thumbnail_ready)
             self._loader.start()
             self._update_visible_items()
+            # ==========================================
+            # 【最终修复】等全部加载完，再执行选中
+            # ==========================================
+            if self._target_select_photo is not None:
+                #old skywalker self.
+                self.select_photo(self._target_select_photo)
+                photo_key = _photo_key(self._target_select_photo)
+                self._multi_selected.add(photo_key)
+                card = self._cards.get(photo_key)
+                if card:
+                    card.set_multi_selected(True)
+                self._target_select_photo = None
+                self._emit_multi_selection()
+
 
     def set_thumb_size(self, size: int):
         """调整缩略图尺寸并重新加载。"""
@@ -899,7 +914,7 @@ class ThumbnailGrid(QScrollArea):
             self._cards[photo_key].set_selected(True)
             # 滚动到可见区域
             card = self._cards[photo_key]
-            self.ensureWidgetVisible(card)
+            #self.ensureWidgetVisible(card)
 
     def select_next(self) -> Optional[dict]:
         """选中下一张，返回 photo dict；已在末尾则返回 None。"""
@@ -936,6 +951,13 @@ class ThumbnailGrid(QScrollArea):
             card.set_pixmap(image)
 
     def _on_badge_clicked(self, photo: dict):
+        ###old skywalker
+        self._target_select_photo = photo
+        self._anchor_photo = photo
+        self.select_photo(photo)
+        self.photo_selected.emit(photo)
+        #self._emit_multi_selection()  # 让 compare 按钮隐藏
+        ###end
         burst_id = photo.get("burst_id")
         if burst_id is not None:
             self.burst_badge_clicked.emit(burst_id)
@@ -998,6 +1020,7 @@ class ThumbnailGrid(QScrollArea):
             if card:
                 card.set_multi_selected(False)
         self._multi_selected.clear()
+        self._target_select_photo = None
 
     def _emit_multi_selection(self):
         """发射多选变化信号（含 anchor 逻辑，最多传出 2 张）。"""

@@ -18,6 +18,7 @@ from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush
 
 from ui.styles import COLORS, FONTS
 from ui.set_qss_util import update_toogle_btn_style, set_btn_style
+from tools.utils import load_image_with_exif_rotation
 
 # 焦点状态颜色映射
 _FOCUS_COLORS = {
@@ -108,12 +109,14 @@ class _PreloadWorker(QThread):
         for path in paths:
             if self._cancelled:
                 break
-            if not path or not os.path.exists(path):
+            #if not path or not os.path.exists(path):
+            if path and not os.path.exists(path):
                 continue
             if _hd_cache.get(path) is not None:
                 continue        # 已在缓存，跳过
             # QImage 可在工作线程安全使用；QPixmap 须在主线程转换
-            img = QImage(path)
+            #img = QImage(path)
+            img = load_image_with_exif_rotation(path)
             if not img.isNull() and not self._cancelled:
                 _hd_cache.put(path, img)
 
@@ -138,7 +141,10 @@ class _ImageLoader(QThread):
         if self._cancelled:
             return
         if self._path and os.path.exists(self._path):
-            img = QImage(self._path)
+            # ===================== 【修复：自动根据 EXIF 旋转】 =====================
+            img = load_image_with_exif_rotation(self._path)
+            # ======================================================================
+            #img = QImage(self._path)
             if not self._cancelled:
                 self.ready.emit(img)
         else:

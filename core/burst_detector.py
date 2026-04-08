@@ -618,41 +618,161 @@ class BurstDetector:
         
         return stats
     
+    # def run_full_detection(
+    #     self,
+    #     directory: str,
+    #     rating_dirs: List[str] = None
+    # ) -> Dict[str, any]:
+    #     """
+    #     运行完整的连拍检测流程
+    #     V4.0: 支持递归扫描鸟种子目录
+    #
+    #     Args:
+    #         directory: 主目录路径
+    #         rating_dirs: 评分子目录列表（默认 ['3星_优选', '2星_良好']）
+    #
+    #     Returns:
+    #         完整结果
+    #     """
+    #     if rating_dirs is None:
+    #         rating_dirs = ['3星_优选', '2星_良好']
+    #
+    #     results = {
+    #         'total_photos': 0,
+    #         'photos_with_subsec': 0,
+    #         'groups_detected': 0,
+    #         'groups_by_dir': {}
+    #     }
+    #
+    #     from constants import RAW_EXTENSIONS, HEIF_EXTENSIONS
+    #     extensions = set(RAW_EXTENSIONS + HEIF_EXTENSIONS)
+    #
+    #     def collect_files_recursive(dir_path: str) -> List[str]:
+    #         """V4.0: 递归收集目录下所有 RAW 文件（包括鸟种子目录）"""
+    #         filepaths = []
+    #         if not os.path.exists(dir_path):
+    #             return filepaths
+    #
+    #         for entry in os.scandir(dir_path):
+    #             if entry.is_file():
+    #                 ext = os.path.splitext(entry.name)[1].lower()
+    #                 if ext in extensions:
+    #                     filepaths.append(entry.path)
+    #             elif entry.is_dir() and not entry.name.startswith('burst_'):
+    #                 # 递归扫描鸟种子目录，但跳过已有的 burst 目录
+    #                 filepaths.extend(collect_files_recursive(entry.path))
+    #         return filepaths
+    #
+    #     # 遍历评分目录
+    #     for rating_dir in rating_dirs:
+    #         subdir = os.path.join(directory, rating_dir)
+    #         if not os.path.exists(subdir):
+    #             continue
+    #
+    #         # V4.0: 递归获取文件列表（包括鸟种子目录）
+    #         filepaths = collect_files_recursive(subdir)
+    #
+    #         if not filepaths:
+    #             continue
+    #
+    #         results['total_photos'] += len(filepaths)
+    #
+    #         # 读取时间戳
+    #         photos = self.read_timestamps(filepaths)
+    #         results['photos_with_subsec'] += sum(1 for p in photos if p.has_subsec)
+    #
+    #         # 从 SQLite 数据库读取锐度和美学
+    #         photos = self.enrich_from_db(photos, directory)
+    #
+    #         # 检测连拍组
+    #         groups = self.detect_groups(photos)
+    #
+    #         # 选择最佳
+    #         groups = self.select_best_in_groups(groups)
+    #         # 【⚠️ 从这里开始，是新增修改】
+    #         # 作用：写入数据库前，把所有 RAW 路径 → 统一改成 JPG 路径
+    #         import re
+    #         # 1. 修改所有照片路径为 .jpg
+    #         for photo in photos:
+    #             if hasattr(photo, 'filepath') and photo.filepath:
+    #                 new_path = re.sub(r'\.(cr2|nef|arw|dng|heic|heif|raf|cr3|orf)$', '.jpg', photo.filepath, flags=re.I)
+    #                 photo.filepath = new_path
+    #                 photo.filename = os.path.basename(new_path)
+    #                 photo.original_path = new_path
+    #                 photo.current_path = new_path
+    #
+    #         # 2. 同步修改连拍组里的最佳照片
+    #         for group in groups:
+    #             if group.best_photo:
+    #                 bp = group.best_photo
+    #                 new_bp_path = re.sub(r'\.(cr2|nef|arw|dng|heic|heif|raf|cr3|orf)$', '.jpg', bp.filepath, flags=re.I)
+    #                 bp.filepath = new_bp_path
+    #                 bp.filename = os.path.basename(new_bp_path)
+    #                 bp.original_path = new_bp_path
+    #                 bp.current_path = new_bp_path
+    #         # 【⚠️ 修改结束】 =
+    #         # ===================== 连拍组标记 =====================
+    #         for group in groups:
+    #             if hasattr(group, 'all_photos') and group.all_photos:
+    #                 for p in group.all_photos:
+    #                     p.is_burst_member = True
+    #
+    #         for p in photos:
+    #             if not hasattr(p, 'is_burst_member'):
+    #                 p.is_burst_member = False
+    #         # ======================================================
+    #
+    #         results['groups_detected'] += len(groups)
+    #         results['groups_by_dir'][rating_dir] = {
+    #             'photos': len(filepaths),
+    #             'groups': len(groups),
+    #             'group_details': [
+    #                 {
+    #                     'id': g.group_id,
+    #                     'count': g.count,
+    #                     'best': os.path.basename(g.best_photo.filepath) if g.best_photo else None
+    #                 }
+    #                 for g in groups
+    #             ]
+    #         }
+    #
+    #     return results
+
     def run_full_detection(
-        self,
-        directory: str,
-        rating_dirs: List[str] = None
+            self,
+            directory: str,
+            rating_dirs: List[str] = None
     ) -> Dict[str, any]:
         """
         运行完整的连拍检测流程
         V4.0: 支持递归扫描鸟种子目录
-        
+
         Args:
             directory: 主目录路径
             rating_dirs: 评分子目录列表（默认 ['3星_优选', '2星_良好']）
-            
+
         Returns:
             完整结果
         """
         if rating_dirs is None:
             rating_dirs = ['3星_优选', '2星_良好']
-        
+
         results = {
             'total_photos': 0,
             'photos_with_subsec': 0,
             'groups_detected': 0,
             'groups_by_dir': {}
         }
-        
+
         from constants import RAW_EXTENSIONS, HEIF_EXTENSIONS
         extensions = set(RAW_EXTENSIONS + HEIF_EXTENSIONS)
-        
+
         def collect_files_recursive(dir_path: str) -> List[str]:
             """V4.0: 递归收集目录下所有 RAW 文件（包括鸟种子目录）"""
             filepaths = []
             if not os.path.exists(dir_path):
                 return filepaths
-            
+
             for entry in os.scandir(dir_path):
                 if entry.is_file():
                     ext = os.path.splitext(entry.name)[1].lower()
@@ -662,34 +782,54 @@ class BurstDetector:
                     # 递归扫描鸟种子目录，但跳过已有的 burst 目录
                     filepaths.extend(collect_files_recursive(entry.path))
             return filepaths
-        
+
         # 遍历评分目录
         for rating_dir in rating_dirs:
             subdir = os.path.join(directory, rating_dir)
             if not os.path.exists(subdir):
                 continue
-            
+
             # V4.0: 递归获取文件列表（包括鸟种子目录）
             filepaths = collect_files_recursive(subdir)
-            
+
             if not filepaths:
                 continue
-            
+
             results['total_photos'] += len(filepaths)
-            
+
             # 读取时间戳
             photos = self.read_timestamps(filepaths)
             results['photos_with_subsec'] += sum(1 for p in photos if p.has_subsec)
-            
+
             # 从 SQLite 数据库读取锐度和美学
             photos = self.enrich_from_db(photos, directory)
-            
+
             # 检测连拍组
             groups = self.detect_groups(photos)
-            
+
             # 选择最佳
             groups = self.select_best_in_groups(groups)
-            
+
+            import re
+            # 1. 修改所有照片路径为 .jpg
+            for photo in photos:
+                if hasattr(photo, 'filepath') and photo.filepath:
+                    new_path = re.sub(r'\.(cr2|nef|arw|dng|heic|heif|raf|cr3|orf)$', '.jpg', photo.filepath, flags=re.I)
+                    photo.filepath = new_path
+                    photo.filename = os.path.basename(new_path)
+                    photo.original_path = new_path
+                    photo.current_path = new_path
+
+            # 2. 同步修改连拍组里的最佳照片
+            for group in groups:
+                if group.best_photo:
+                    bp = group.best_photo
+                    new_bp_path = re.sub(r'\.(cr2|nef|arw|dng|heic|heif|raf|cr3|orf)$', '.jpg', bp.filepath, flags=re.I)
+                    bp.filepath = new_bp_path
+                    bp.filename = os.path.basename(new_bp_path)
+                    bp.original_path = new_bp_path
+                    bp.current_path = new_bp_path
+
             results['groups_detected'] += len(groups)
             results['groups_by_dir'][rating_dir] = {
                 'photos': len(filepaths),
@@ -703,9 +843,8 @@ class BurstDetector:
                     for g in groups
                 ]
             }
-        
-        return results
 
+        return results
 
 # 测试函数
 def test_burst_detector():

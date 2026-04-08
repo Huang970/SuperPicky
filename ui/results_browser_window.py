@@ -33,7 +33,7 @@ from PySide6.QtGui import QAction, QKeyEvent, QIcon, QFont
 from ui.styles import COLORS, GLOBAL_STYLE, FONTS
 from ui.set_qss_util import set_btn_style
 from ui.filter_panel import FilterPanel
-from ui.thumbnail_grid import ThumbnailGrid
+from ui.thumbnail_grid import ThumbnailGrid,_photo_key
 from ui.detail_panel import DetailPanel
 from ui.fullscreen_viewer import FullscreenViewer
 from ui.comparison_viewer import ComparisonViewer
@@ -908,6 +908,14 @@ class ResultsBrowserWindow(QMainWindow):
 
         raw_photos = self._db.get_photos_by_filters(filters)
         resolved_photos = [self._resolve_photo_paths(p) for p in raw_photos]
+        # ===================== ✅ 强制生效 =====================
+        if self._filter_panel.is_only_burst():
+            # 只要 burst_id 不为空，就是连拍照片
+            resolved_photos = [
+                p for p in resolved_photos
+                if p.get("burst_id") is not None
+            ]
+        # ======================================================
         self._raw_filtered_photos = resolved_photos
 
         total = len(self._all_photos)
@@ -946,7 +954,7 @@ class ResultsBrowserWindow(QMainWindow):
             else:
                 # It's part of a burst
                 if bid in processed_bursts:
-                    continue # Already handled this burst
+                    continue  # Already handled this burst
 
                 processed_bursts.add(bid)
                 burst_photos = burst_map[bid]
@@ -988,20 +996,126 @@ class ResultsBrowserWindow(QMainWindow):
         self._fullscreen_nav_photos = list(self._filtered_photos)
 
         if self._filtered_photos:
-            target_identity = current_selection if current_selection else _photo_identity(self._filtered_photos[0])
-            if not any(_photo_identity(p) == target_identity for p in self._filtered_photos):
-                target_identity = _photo_identity(self._filtered_photos[0])
+            selected_photo = None
 
-            selected_photo = next(p for p in self._filtered_photos if _photo_identity(p) == target_identity)
-            self._thumb_grid.select_photo(selected_photo)
+            # 1. 先尝试恢复原来选中的照片（修复 tuple vs string 匹配问题）
+            if current_selection is not None:
+                # 关键修复：统一用 ID 字符串匹配，兼容元组 _photo_identity
+                def match_id(photo):
+                    pid = _photo_identity(photo)
+                    return pid[1] == current_selection  # 只比较真实ID部分
+
+                selected_photo = next((p for p in self._filtered_photos if match_id(p)), None)
+
+            # 2. 如果找不到（折叠状态），自动选中对应的折叠组
+            if selected_photo is None and current_selection is not None:
+                lost_burst_id = None
+                for raw_p in self._raw_filtered_photos:
+                    pid = _photo_identity(raw_p)
+                    if pid[1] == current_selection:
+                        lost_burst_id = raw_p.get("burst_id")
+                        break
+
+                if lost_burst_id is not None:
+                    for item in self._filtered_photos:
+                        if item.get("burst_id") == lost_burst_id and item.get("is_burst_group"):
+                            selected_photo = item
+                            break
+
+            # 3. 最终兜底
+            if selected_photo is None:
+                selected_photo = self._filtered_photos[0]
+
+            self._thumb_grid._target_select_photo = selected_photo
             self._detail_panel.show_photo(selected_photo)
         else:
             self._detail_panel.clear()
-        #old skywalker
-        self._select_count_label.setText("")
-        self._select_count_label.hide()
-        self._compare_btn.hide()
-        #end
+
+    # def _update_display_list(self):
+    #     """Flattens the filtered photos list considering the expanded state of burst groups."""
+    #     # Group by burst_id to find the "best" representative photo for each group
+    #     burst_map = {}
+    #     for p in self._raw_filtered_photos:
+    #         bid = p.get("burst_id")
+    #         if bid is not None:
+    #             if bid not in burst_map:
+    #                 burst_map[bid] = []
+    #             burst_map[bid].append(p)
+    #     burst_map = {bid: photos for bid, photos in burst_map.items() if len(photos) > 1}
+    #
+    #     best_burst_photos = {}
+    #     for bid, photos in burst_map.items():
+    #         best_photo = max(photos, key=lambda x: (x.get("rating", 0), x.get("composite_score", 0.0)))
+    #         best_burst_photos[bid] = _photo_identity(best_photo)
+    #
+    #     grouped_photos = []
+    #     processed_bursts = set()
+    #
+    #     for p in self._raw_filtered_photos:
+    #         bid = p.get("burst_id")
+    #
+    #         if bid is None or bid not in burst_map:
+    #             # Normal photo
+    #             grouped_photos.append(dict(p))
+    #         else:
+    #             # It's part of a burst
+    #             if bid in processed_bursts:
+    #                 continue # Already handled this burst
+    #
+    #             processed_bursts.add(bid)
+    #             burst_photos = burst_map[bid]
+    #
+    #             burst_photos = sorted(burst_photos, key=_burst_sort_key)
+    #
+    #             if bid in self._expanded_bursts:
+    #                 # Expanded: add all photos in chronological order
+    #                 for i, bp in enumerate(burst_photos, 1):
+    #                     expanded_photo = dict(bp)
+    #                     expanded_photo["is_expanded_burst_member"] = True
+    #                     expanded_photo["burst_position_index"] = i
+    #                     expanded_photo["burst_total_count"] = len(burst_photos)
+    #                     expanded_photo["burst_id"] = bid
+    #                     grouped_photos.append(expanded_photo)
+    #             else:
+    #                 # Collapsed: add only the representative photo
+    #                 best_identity = best_burst_photos[bid]
+    #                 best_p = next(x for x in burst_photos if _photo_identity(x) == best_identity)
+    #
+    #                 group_photo = dict(best_p)
+    #                 group_photo["is_burst_group"] = True
+    #                 group_photo["burst_count"] = len(burst_photos)
+    #                 group_photo["burst_photos"] = burst_photos
+    #                 group_photo["burst_id"] = bid
+    #                 grouped_photos.append(group_photo)
+    #
+    #     # Do NOT sort grouped_photos here. We want them in the exact order they appeared in _raw_filtered_photos,
+    #     # which preserves the sorting (rating, time, etc.) applied by the database!
+    #     # When a burst group is encountered, it is placed at the position of its first appearing member.
+    #
+    #     self._filtered_photos = grouped_photos
+    #
+    #     # Save selection state to try and restore it
+    #     current_selection = self._thumb_grid._selected_key
+    #
+    #     self._thumb_grid.load_photos(self._filtered_photos, keep_scroll=True)
+    #     self._fullscreen.set_photo_list(self._filtered_photos)
+    #     self._fullscreen_nav_photos = list(self._filtered_photos)
+    #
+    #     if self._filtered_photos:
+    #         target_identity = current_selection if current_selection else _photo_identity(self._filtered_photos[0])
+    #         if not any(_photo_identity(p) == target_identity for p in self._filtered_photos):
+    #             target_identity = _photo_identity(self._filtered_photos[0])
+    #
+    #         selected_photo = next(p for p in self._filtered_photos if _photo_identity(p) == target_identity)
+    #         self._thumb_grid.select_photo(selected_photo)
+    #         self._detail_panel.show_photo(selected_photo)
+    #     else:
+    #         self._detail_panel.clear()
+    #     #old skywalker
+    #     self._select_count_label.setText("")
+    #     self._select_count_label.hide()
+    #     self._compare_btn.hide()
+    #     #end
 
     @Slot(int)
     def _toggle_burst(self, burst_id: int):

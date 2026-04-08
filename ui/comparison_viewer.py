@@ -320,14 +320,14 @@ class ComparisonViewer(QWidget):
     def _load_image(self, photo: dict, img_label: _FullscreenImageLabel, side: str):
         """加载图片到指定侧的 label。"""
         # 优先显示缩略图缓存
-        try:
-            from ui.thumbnail_grid import _thumb_cache
-            fn = photo.get("filename", "")
-            cached = _thumb_cache.get(fn)
-            if cached and not cached.isNull():
-                img_label.set_pixmap(cached)
-        except Exception:
-            pass
+        # try:
+        #     from ui.thumbnail_grid import _thumb_cache
+        #     fn = photo.get("filename", "")
+        #     cached = _thumb_cache.get(fn)
+        #     if cached and not cached.isNull():
+        #         img_label.set_pixmap(cached)
+        # except Exception:
+        #     pass
 
         # 设置焦点叠加
         img_label.set_focus(

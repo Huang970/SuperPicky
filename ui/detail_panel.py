@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt, Signal, QSize, QThread, Slot, QTimer
 from PySide6.QtGui import QPixmap, QFont, QGuiApplication, QImage
 
 from ui.styles import COLORS, FONTS
+from tools.utils import load_image_with_exif_rotation
 
 
 # ============================================================
@@ -37,8 +38,10 @@ class _ImageLoader(QThread):
     def run(self):
         if self._cancelled:
             return
+        self._path = self._path[:-4] + ".JPG"
         if self._path and os.path.exists(self._path):
-            img = QImage(self._path)
+            #img = QImage(self._path)
+            img = load_image_with_exif_rotation(self._path)
             if not self._cancelled:
                 self.ready.emit(img)
         else:
@@ -651,23 +654,29 @@ class DetailPanel(QWidget):
     def _resolve_image_path(self) -> Optional[str]:
         """根据当前视图模式解析目标图片路径。"""
         p = self._current_photo
+        if not p:
+            return None
+
+        path = None
+
         if self._use_crop_view:
-            # 裁切图：YOLO 裁切区域，退而用干净大图
             path = p.get("debug_crop_path")
-            if not path or not os.path.exists(path):
+            if path and not os.path.exists(path):
                 path = p.get("temp_jpeg_path")
         else:
-            # 全图：干净 temp JPEG（无检测框叠加）
             path = p.get("temp_jpeg_path")
-            if not path or not os.path.exists(path):
-                path = p.get("debug_crop_path")
+            # if path and not os.path.exists(path):
+            #     path = p.get("debug_crop_path")
 
-        if not path or not os.path.exists(path):
-            op = p.get("original_path") or p.get("current_path")
-            if op and os.path.exists(op) and os.path.splitext(op)[1].lower() in ('.jpg', '.jpeg'):
-                path = op
+        # 最终兜底
+        #if path and not os.path.exists(path):
+        if not os.path.isfile(path):
+            #path = p.get("original_path") or p.get("current_path")
+            path = p.get("current_path")
 
-        return path if path and os.path.exists(path) else None
+        #return path if path and os.path.exists(path) else None
+        return path if path and os.path.isfile(path) else None
+
 
     @Slot(object)
     def _on_image_ready(self, img: QImage):
