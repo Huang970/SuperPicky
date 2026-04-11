@@ -1088,12 +1088,14 @@ class FullscreenViewer(QWidget):
 
         # 情况2：显示连拍组（如 连拍序列(8张)）
         if is_group:
-            lang = getattr(self.i18n, "current_lang", "")
-            text = f"Burst Sequence ({burst_count})" if str(lang).startswith("en") else f"连拍序列（{burst_count}张）"
-            self._burst_info_btn.setText(text)
-            self._set_burst_button_style(position_mode=False)
-            self.prev_btn.hide()
-            self.next_btn.hide()
+            # lang = getattr(self.i18n, "current_lang", "")
+            # text = f"Burst Sequence ({burst_count})" if str(lang).startswith("en") else f"连拍序列（{burst_count}张）"
+            # self._burst_info_btn.setText(text)
+            # self._set_burst_button_style(position_mode=False)
+            # self.prev_btn.hide()
+            # self.next_btn.hide()
+            #发送自动展开信号，方便浏览
+            self._burst_info_btn.clicked.emit()
             return
 
         # 无连拍信息：隐藏按钮
@@ -1110,7 +1112,7 @@ class FullscreenViewer(QWidget):
 
         if position_mode:
             # 样式：序号模式（高亮样式）
-            btn.setToolTip("点击收回连拍序列" if not str(getattr(self.i18n, "current_lang", "")).startswith(
+            btn.setToolTip("点击跳转组内默认最佳位置" if not str(getattr(self.i18n, "current_lang", "")).startswith(
                 "en") else "Click to collapse burst sequence")
             btn.setStyleSheet(
                 f"QPushButton {{ background-color: {COLORS['bg_input']};"
@@ -1207,13 +1209,11 @@ class FullscreenViewer(QWidget):
         #     if ext in ('.jpg', '.jpeg'):
         #         return op
         ###old skywalkder
-        op = photo.get("current_path") or photo.get("original_path")
+        op = photo.get("current_path")
         if op :
-            op = op[:-4] + ".JPG"
-        if op and os.path.exists(op):
-            ext = os.path.splitext(op)[1].lower()
-            if ext in ('.jpg', '.jpeg'):
-                return op
+            op = os.path.splitext(op)[0] + ".jpg"
+        if os.path.isfile(op):
+            return op
         ###end
         return None
 

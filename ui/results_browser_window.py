@@ -909,12 +909,23 @@ class ResultsBrowserWindow(QMainWindow):
         raw_photos = self._db.get_photos_by_filters(filters)
         resolved_photos = [self._resolve_photo_paths(p) for p in raw_photos]
         # ===================== ✅ 强制生效 =====================
-        if self._filter_panel.is_only_burst():
+        if self._filter_panel.is_show_burst() and self._filter_panel.is_show_single():
+            pass
+        elif self._filter_panel.is_show_burst():
             # 只要 burst_id 不为空，就是连拍照片
             resolved_photos = [
                 p for p in resolved_photos
                 if p.get("burst_id") is not None
             ]
+        elif self._filter_panel.is_show_single():
+             # 只要 burst_id 为空，就是单拍照片
+            resolved_photos = [
+                p for p in resolved_photos
+                if p.get("burst_id") is None
+            ]
+        else:
+            resolved_photos =[]
+
         # ======================================================
         self._raw_filtered_photos = resolved_photos
 
@@ -1247,7 +1258,7 @@ class ResultsBrowserWindow(QMainWindow):
             collapsed_photo = self._build_collapsed_burst_photo(photo)
             if collapsed_photo:
                 self._show_fullscreen_photo(collapsed_photo, nav_photos=self._build_collapsed_navigation_list())
-                self._detail_panel._switch_view(True)
+                #self._detail_panel._switch_view(True)
                 #self._toolbar.hide()
                 self._stack.setCurrentIndex(1)
                 self._fullscreen.setFocus()
@@ -1260,7 +1271,7 @@ class ResultsBrowserWindow(QMainWindow):
         target_identity = _photo_identity(photo)
         selected_photo = next((p for p in sequence if _photo_identity(p) == target_identity), sequence[0])
         self._show_fullscreen_photo(selected_photo, nav_photos=sequence)
-        self._detail_panel._switch_view(True)
+        #self._detail_panel._switch_view(True)
         #self._toolbar.hide()
         self._stack.setCurrentIndex(1)
         self._fullscreen.setFocus()
@@ -1290,7 +1301,7 @@ class ResultsBrowserWindow(QMainWindow):
             return
 
         self._show_fullscreen_photo(photo)
-        self._detail_panel._switch_view(True)   # 进入全屏 → 切到裁切图
+        #self._detail_panel._switch_view(True)   # 进入全屏 → 切到裁切图
         self._stack.setCurrentIndex(1)
         self._fullscreen.setFocus()  # 确保全屏 viewer 获得键盘焦点
 
@@ -1299,7 +1310,7 @@ class ResultsBrowserWindow(QMainWindow):
         """返回 grid 视图。"""
         self._stack.setCurrentIndex(0)
         self._fullscreen_nav_photos = list(self._filtered_photos)
-        self._detail_panel._switch_view(False)  # 退出全屏 → 切回全图
+        #self._detail_panel._switch_view(False)  # 退出全屏 → 切回全图
         self.setFocus()  # 确保窗口拿回焦点
 
     @Slot()
@@ -1525,7 +1536,8 @@ class ResultsBrowserWindow(QMainWindow):
             if in_fullscreen:
                 self._fullscreen.toggle_focus()
             else:
-                self._detail_panel._switch_view(not self._detail_panel._use_crop_view)
+                #self._detail_panel._switch_view(not self._detail_panel._use_crop_view)
+                pass
         else:
             super().keyPressEvent(event)
 

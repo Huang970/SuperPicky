@@ -154,11 +154,17 @@ class FilterPanel(QWidget):
         layout.addWidget(_section_label(self.i18n.t("browser.filter_rating")))
         layout.addWidget(self._build_rating_buttons())
 
-        layout.addWidget(self._divider())
+        #layout.addWidget(self._divider())
 
         # 连拍过滤
-        self.onlyBurstCheck = QCheckBox("仅显示连拍组")
-        self.onlyBurstCheck.setStyleSheet(f"""
+        w = QWidget()
+        w.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        self.showBurstCheck = QCheckBox("显示连拍")
+        self.showBurstCheck.setChecked(True)
+        self.showBurstCheck.setStyleSheet(f"""
              QCheckBox {{
                  color: {COLORS['text_secondary']};
                  font-size: 12px;
@@ -176,8 +182,36 @@ class FilterPanel(QWidget):
                  border-color: {COLORS['accent']};
              }}
          """)
-        layout.addWidget(self.onlyBurstCheck)
-        self.onlyBurstCheck.clicked.connect(self._on_burst_click)
+        row.addWidget(self.showBurstCheck)
+        #layout.addWidget(self.showBurstCheck)
+        self.showBurstCheck.clicked.connect(self._on_show_burst_click)
+
+        # 连拍过滤
+        self.singlePhotoCheck = QCheckBox("显示单张")
+        self.singlePhotoCheck.setChecked(True)
+        self.singlePhotoCheck.setStyleSheet(f"""
+             QCheckBox {{
+                 color: {COLORS['text_secondary']};
+                 font-size: 12px;
+                 spacing: 4px;
+             }}
+             QCheckBox::indicator {{
+                 width: 14px;
+                 height: 14px;
+                 border-radius: 3px;
+                 border: 1px solid {COLORS['border']};
+                 background: transparent;
+             }}
+             QCheckBox::indicator:checked {{
+                 background-color: {COLORS['accent']};
+                 border-color: {COLORS['accent']};
+             }}
+         """)
+        row.addWidget(self.singlePhotoCheck)
+        #layout.addWidget(self.singlePhotoCheck)
+        self.singlePhotoCheck.clicked.connect(self._on_show_single_click)
+        layout.addWidget(w)
+
         layout.addWidget(self._divider())
 
         # --- 对焦状态（多选 checkbox）---
@@ -257,12 +291,19 @@ class FilterPanel(QWidget):
     # ------------------------------------------------------------------
     #  评分按钮（单选，横排）
     # -----------------------------------------------------------------
-    def _on_burst_click(self):
+    def _on_show_burst_click(self):
         # 自动获取当前所有筛选条件，并触发刷新
         self.filters_changed.emit(self.get_filters())
 
-    def is_only_burst(self) -> bool:
-        return self.onlyBurstCheck.isChecked()
+    def is_show_burst(self) -> bool:
+        return self.showBurstCheck.isChecked()
+
+    def _on_show_single_click(self):
+        # 自动获取当前所有筛选条件，并触发刷新
+        self.filters_changed.emit(self.get_filters())
+
+    def is_show_single(self) -> bool:
+        return self.singlePhotoCheck.isChecked()
 
     def _build_rating_buttons(self) -> QWidget:
 
@@ -378,7 +419,7 @@ class FilterPanel(QWidget):
         row.setSpacing(8)
 
         # 默认勾选 BEST + GOOD
-        _defaults = {"BEST", "GOOD"}
+        _defaults = {"BEST", "GOOD","BAD"}
 
         for mode, label_zh, statuses, color in _FOCUS_OPTIONS:
             label = label_zh if _is_zh else mode
@@ -506,7 +547,7 @@ class FilterPanel(QWidget):
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )
             self._count_label.setText("⚠ 无结果")
-        elif count < 1000:
+        elif count < 5000:
             self._count_label.setStyleSheet(
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )
@@ -585,11 +626,19 @@ class FilterPanel(QWidget):
             btn.setStyleSheet(self._rating_btn_style(m == _DEFAULT_RATING, m))
 
         # 对焦 → 默认精焦+合焦
-        _defaults = {"BEST", "GOOD"}
+        _defaults = {"BEST", "GOOD", "BAD"}
         for mode, cb in self._focus_checks.items():
             cb.blockSignals(True)
             cb.setChecked(mode in _defaults)
             cb.blockSignals(False)
+
+        # 连拍序列，单张序列
+        self.showBurstCheck.blockSignals(True)
+        self.showBurstCheck.setChecked(True)
+        self.showBurstCheck.blockSignals(False)
+        self.singlePhotoCheck.blockSignals(True)
+        self.singlePhotoCheck.setChecked(True)
+        self.singlePhotoCheck.blockSignals(False)
 
         # 飞行 → 全选
         for cb in self._flight_cbs.values():

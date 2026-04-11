@@ -302,10 +302,11 @@ class ComparisonViewer(QWidget):
         """刷新顶栏文件名和评分标签。"""
         _RATING_TEXT = {5: "★★★★★", 4: "★★★★", 3: "★★★", 2: "★★", 1: "★", 0: "0", -1: "—"}
         if self._photo_a:
-            self._name_a.setText(self._photo_a.get("filename", ""))
+            fn = os.path.basename(self._photo_a.get("current_path",""))
+            self._name_a.setText(os.path.basename(self._photo_a.get("current_path","")))
             self._rating_a.setText(_RATING_TEXT.get(self._photo_a.get("rating", 0), ""))
         if self._photo_b:
-            self._name_b.setText(self._photo_b.get("filename", ""))
+            self._name_b.setText(os.path.basename(self._photo_b.get("current_path","")))
             self._rating_b.setText(_RATING_TEXT.get(self._photo_b.get("rating", 0), ""))
 
     def cleanup(self):
@@ -354,12 +355,27 @@ class ComparisonViewer(QWidget):
 
     def _resolve_path(self, photo: dict) -> Optional[str]:
         """按优先级解析高清图路径。"""
-        for key in ("temp_jpeg_path", "yolo_debug_path", "debug_crop_path", "original_path", "current_path"):
-            p = photo.get(key)
-            if p and os.path.exists(p):
-                ext = os.path.splitext(p)[1].lower()
-                if key in ("temp_jpeg_path", "yolo_debug_path", "debug_crop_path") or ext in ('.jpg', '.jpeg'):
-                    return p
+        # for key in ("temp_jpeg_path", "yolo_debug_path", "debug_crop_path", "original_path", "current_path"):
+        #     p = photo.get(key)
+        #     if p and os.path.exists(p):
+        #         ext = os.path.splitext(p)[1].lower()
+        #         if key in ("temp_jpeg_path", "yolo_debug_path", "debug_crop_path") or ext in ('.jpg', '.jpeg'):
+        #             return p
+
+        #现在的批处理的文件移动逻辑有问题，对于RAW格式的连拍照片，JPG文件没有生成，temp_jpeg_path被错误设置，导致高清对比时找不到正确的文件位置。
+        #只能按现行的移动逻辑暂时改正。
+        op = photo.get("debug_crop_path")
+        if op:
+            # 文件名路径中的替换为crop_debug -> temp_preview
+            op = op.replace("crop_debug","temp_preview")
+        if os.path.isfile(op):
+            return op
+
+        op = photo.get("current_path")
+        if op :
+             op = os.path.splitext(op)[0] + ".jpg"
+        if os.path.isfile(op):
+            return op
         return None
 
     def _rate_left(self, stars: int):

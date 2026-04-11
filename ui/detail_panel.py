@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QSize, QThread, Slot, QTimer
-from PySide6.QtGui import QPixmap, QFont, QGuiApplication, QImage
+from PySide6.QtGui import QPixmap, QFont, QGuiApplication, QImage,QPainter,QColor,QPen
 
 from ui.styles import COLORS, FONTS
 from tools.utils import load_image_with_exif_rotation
@@ -149,12 +149,13 @@ class _ZoomableImageLabel(QLabel):
         self._refresh()
 
     def wheelEvent(self, event):
-        delta = event.angleDelta().y()
-        if delta > 0:
-            self._scale = min(self._scale * 1.15, 8.0)
-        else:
-            self._scale = max(self._scale / 1.15, 0.1)
-        self._refresh()
+        event.accept()
+        # delta = event.angleDelta().y()
+        # if delta > 0:
+        #     self._scale = min(self._scale * 1.15, 8.0)
+        # else:
+        #     self._scale = max(self._scale / 1.15, 0.1)
+        # self._refresh()
 
 
 class DetailPanel(QWidget):
@@ -180,8 +181,34 @@ class DetailPanel(QWidget):
         self.setFixedWidth(300)
         self.setStyleSheet(f"background-color: {COLORS['bg_elevated']}; border-left: 1px solid {COLORS['border_subtle']};")
 
+        self._no_crop_pix = self._create_no_crop_placeholder(270, 200)
+
         self._build_ui()
 
+    def _create_no_crop_placeholder(self, width=250, height=200):
+        pix = QPixmap(width, height)
+        pix.fill(QColor(0, 0, 0))
+
+        painter = QPainter(pix)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # 浅灰白边框，更明显
+        pen = QPen(QColor(220, 220, 220))
+        pen.setWidth(1)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(0, 0, width - 1, height - 1)
+
+        # 文字
+        font = QFont()
+        font.setPointSize(10)
+        painter.setFont(font)
+        painter.setPen(QColor(200, 200, 200))
+        painter.drawText(pix.rect(), Qt.AlignCenter, "当前照片无裁切图")
+
+        painter.end()
+
+        return pix
     # ------------------------------------------------------------------
     #  UI 构建
     # ------------------------------------------------------------------
@@ -620,7 +647,9 @@ class DetailPanel(QWidget):
             self._loader = None
 
         if not self._current_photo:
-            self._img_label.set_pixmap(QPixmap())
+            #此处需修改 old skywalker
+            #self._img_label.set_pixmap(QPixmap())
+            self._img_label.set_pixmap(self._no_crop_pix)
             return
 
         # 立即显示 grid 缓存缩略图（零延迟反馈）
@@ -642,7 +671,9 @@ class DetailPanel(QWidget):
             self._loader.ready.connect(self._on_image_ready)
             self._loader.start()
         else:
-            self._img_label.set_pixmap(QPixmap())
+            #此处需修改 old skywalker
+            #self._img_label.set_pixmap(QPixmap())
+            self._img_label.set_pixmap(self._no_crop_pix)
 
     def cleanup(self):
         if self._loader:
@@ -669,8 +700,8 @@ class DetailPanel(QWidget):
             #     path = p.get("debug_crop_path")
 
         # 最终兜底
-        #if path and not os.path.exists(path):
-        if not os.path.isfile(path):
+        if path and not os.path.exists(path):
+        #if not os.path.isfile(path):
             #path = p.get("original_path") or p.get("current_path")
             path = p.get("current_path")
 
@@ -795,8 +826,9 @@ class DetailPanel(QWidget):
         else:
             self._val_filesize.setText(_unknown)
 
-        # 文件名
-        fn = _display_filename(p) or _unknown
+        # 文件名,显示文件当前所在位置
+        #fn = _display_filename(p) or _unknown
+        fn = file_path
         burst_pos = p.get("burst_position_index")
         burst_total = p.get("burst_total_count")
         if burst_pos and burst_total:

@@ -136,6 +136,42 @@ def _draw_static_overlays(image: QImage, photo: dict):
         painter.setFont(font)
         painter.drawText(4, image.height() - rect_h - 4, rect_w, rect_h, Qt.AlignCenter, burst_text)
 
+    # ======================
+    # 【新增】4级及以上 → 底部中间红色爱心 ❤️
+    # ======================
+    # ======================
+    # 4级及以上 → 底部中间 黑底+红色爱心
+    # ======================
+    if rating >= 4:
+        w = image.width()
+        h = image.height()
+
+        # 更小更精致的黑底框
+        heart_w = 16
+        heart_h = 16
+        x_heart = (w - heart_w) // 2
+        y_heart = h - 16 - 4 # 与对焦圆点对齐
+
+        # 纯黑底
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 0, 0))
+        painter.drawRoundedRect(x_heart, y_heart, heart_w, heart_h, 3, 3)
+
+        # 用稳定爱心符号 ♥ 代替 emoji 和手绘
+        painter.setPen(QColor(255, 60, 100))  # 红色
+        painter.setBrush(Qt.NoBrush)
+        font = QFont()
+        font.setPixelSize(10)
+        font.setBold(True)
+        painter.setFont(font)
+
+        painter.drawText(
+            x_heart, y_heart,
+            heart_w, heart_h,
+            Qt.AlignCenter,
+            "❤️"
+        )
+
     painter.end()
 
 
@@ -148,18 +184,23 @@ def _load_thumbnail_image(photo: dict, thumb_size: int) -> Optional[QImage]:
         candidates.append(ydp)
 
     tjp = photo.get("temp_jpeg_path")
-    if tjp and os.path.exists(tjp):
+    #if tjp and os.path.exists(tjp):
+    if tjp and os.path.isfile(tjp):
         candidates.append(tjp)
 
     dcp = photo.get("debug_crop_path")
     if dcp and os.path.exists(dcp):
         candidates.append(dcp)
 
-    op = photo.get("original_path") or photo.get("current_path")
-    if op and os.path.exists(op):
-        ext = os.path.splitext(op)[1].lower()
-        if ext in ('.jpg', '.jpeg'):
-            candidates.append(op)
+    #op = photo.get("original_path") or photo.get("current_path")
+    # if op and os.path.exists(op):
+    #     ext = os.path.splitext(op)[1].lower()
+    #     if ext in ('.jpg', '.jpeg'):
+    #         candidates.append(op)
+    op = photo.get("current_path")
+    op = os.path.splitext(op)[0] + ".jpg"
+    if op and os.path.isfile(op):
+        candidates.append(op)
 
     for path in candidates:
         image = QImage(path)
@@ -475,7 +516,7 @@ class ThumbnailCard(QFrame):
             painter.drawLine(cx + 4, 14, cx + 7, 18)
             painter.drawLine(cx + 7, 18, cx + 14, 9)
 
-        # 选中状态：2px 实线青绿框
+        # 选中状态：3px 实线青绿框
         if getattr(self, '_selected', False):
             pen = QPen(QColor(COLORS['accent']))  # #00d4aa
             pen.setWidth(3)
