@@ -6,14 +6,16 @@ _FullscreenImageLabel: 支持滚轮缩放 + paintEvent 绘制焦点圆圈/十字
 """
 
 import os
+import sys
+import time
 import threading as _threading
 from collections import OrderedDict
 from typing import Optional
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QApplication
 )
-from PySide6.QtCore import Qt, Signal, QThread, QTimer, Slot, QEvent
+from PySide6.QtCore import Qt, Signal, QThread, QTimer, Slot, QEvent,QPoint, QRect
 from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush
 
 from ui.styles import COLORS, FONTS
@@ -22,10 +24,10 @@ from tools.utils import load_image_with_exif_rotation
 
 # 焦点状态颜色映射
 _FOCUS_COLORS = {
-    "BEST":  QColor(COLORS['focus_best']),   # 绿 — 精焦
-    "GOOD":  QColor(COLORS['focus_good']),   # 琥珀 — 合焦
-    "BAD":   QColor("#ffcc00"),              # 黄 — 失焦
-    "WORST": QColor("#999999"),              # 灰 — 焦点在鸟外
+    "BEST": QColor(COLORS['focus_best']),  # 绿 — 精焦
+    "GOOD": QColor(COLORS['focus_good']),  # 琥珀 — 合焦
+    "BAD": QColor("#ffcc00"),  # 黄 — 失焦
+    "WORST": QColor("#999999"),  # 灰 — 焦点在鸟外
 }
 
 
@@ -109,13 +111,13 @@ class _PreloadWorker(QThread):
         for path in paths:
             if self._cancelled:
                 break
-            #if not path or not os.path.exists(path):
+            # if not path or not os.path.exists(path):
             if path and not os.path.exists(path):
                 continue
             if _hd_cache.get(path) is not None:
-                continue        # 已在缓存，跳过
+                continue  # 已在缓存，跳过
             # QImage 可在工作线程安全使用；QPixmap 须在主线程转换
-            #img = QImage(path)
+            # img = QImage(path)
             img = load_image_with_exif_rotation(path)
             if not img.isNull() and not self._cancelled:
                 _hd_cache.put(path, img)
@@ -127,7 +129,7 @@ class _PreloadWorker(QThread):
 
 class _ImageLoader(QThread):
     """后台线程加载 QImage，避免主线程 QPixmap 线程安全问题。"""
-    ready = Signal(object)   # QImage
+    ready = Signal(object)  # QImage
 
     def __init__(self, path: str, parent=None):
         super().__init__(parent)
@@ -144,7 +146,7 @@ class _ImageLoader(QThread):
             # ===================== 【修复：自动根据 EXIF 旋转】 =====================
             img = load_image_with_exif_rotation(self._path)
             # ======================================================================
-            #img = QImage(self._path)
+            # img = QImage(self._path)
             if not self._cancelled:
                 self.ready.emit(img)
         else:
@@ -172,6 +174,26 @@ class _FullscreenImageLabel(QLabel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
+        self.setMouseTracking(True)
+        self.setStyleSheet("background-color: #f0f0f0; border:1px solid #aaa;")
+
+        # self.original_pixmap = None
+        self.scale = 1.0
+        self.min_scale = 0.1
+        self.max_scale = 10.0
+        self.offset = QPoint(0, 0)
+        self.last_pos = QPoint()
+        self.panning = False
+
+        # 截图
+        self.is_capturing = False
+        self.select_rect = QRect()
+        self.drag_mode = None
+        self.resize_margin = 6
+        self.move_offset = QPoint()
+
+
         self._pixmap: Optional[QPixmap] = None
         self._focus_x: Optional[float] = None
         self._focus_y: Optional[float] = None
@@ -180,8 +202,8 @@ class _FullscreenImageLabel(QLabel):
 
         # 缩放/平移状态
         self._fit_mode: bool = True
-        self._draw_ox: float = 0.0       # 图片左上角 x（label 坐标）
-        self._draw_oy: float = 0.0       # 图片左上角 y（label 坐标）
+        self._draw_ox: float = 0.0  # 图片左上角 x（label 坐标）
+        self._draw_oy: float = 0.0  # 图片左上角 y（label 坐标）
         self._display_scale: float = 1.0
 
         # 丝滑缩放：目标值 + 动画插值
@@ -245,11 +267,19 @@ class _FullscreenImageLabel(QLabel):
             self._pixmap = QPixmap.fromImage(pixmap_or_image)
         else:
             self._pixmap = pixmap_or_image
+        self.fitToView()
         self._fit_mode = True
         self._drag_active = False
         self._zoom_anim_timer.stop()  # 停止上一张图的动画
         self.setCursor(Qt.CrossCursor)
         self.update()
+
+    def fitToView(self):
+        if not self._pixmap:
+            return
+        w, h = self._pixmap.width(), self._pixmap.height()
+        self.scale = min(self.width() / w, self.height() / h)
+        self.offset = QPoint(0, 0)
 
     def set_zoom_at(self, scale: float, mx: float, my: float):
         """以屏幕坐标 (mx, my) 为中心，设置指定缩放比例（带动画过渡）。"""
@@ -279,7 +309,7 @@ class _FullscreenImageLabel(QLabel):
         self._display_scale = scale
         self._draw_ox = ox
         self._draw_oy = oy
-        self._target_scale = scale     # 同步 target 防止残留动画
+        self._target_scale = scale  # 同步 target 防止残留动画
         self._target_ox = ox
         self._target_oy = oy
         self._fit_mode = False
@@ -414,8 +444,8 @@ class _FullscreenImageLabel(QLabel):
         color = QColor(_FOCUS_COLORS[self._focus_status])
         color.setAlpha(220)
 
-        half = 26   # 方块半边长（屏幕像素）
-        arm = 10    # 角臂长度
+        half = 26  # 方块半边长（屏幕像素）
+        arm = 10  # 角臂长度
         x, y = int(fx), int(fy)
 
         pen = QPen(color)
@@ -430,8 +460,8 @@ class _FullscreenImageLabel(QLabel):
         for sx, sy in [(-1, -1), (1, -1), (-1, 1), (1, 1)]:
             cx = x + sx * half
             cy = y + sy * half
-            painter.drawLine(cx, cy, cx - sx * arm, cy)   # 横臂（向内）
-            painter.drawLine(cx, cy, cx, cy - sy * arm)   # 竖臂（向内）
+            painter.drawLine(cx, cy, cx - sx * arm, cy)  # 横臂（向内）
+            painter.drawLine(cx, cy, cx, cy - sy * arm)  # 竖臂（向内）
 
         # 中心实心圆点，标记精确焦点位置
         dot_r = 3
@@ -491,6 +521,11 @@ class _FullscreenImageLabel(QLabel):
             fy_s = oy + self._focus_y * img_h * scale
             self._draw_focus_overlay(painter, fx_s, fy_s)
 
+        if self.is_capturing and not self.select_rect.isNull():
+            painter.setPen(QPen(QColor(0, 220, 0), 2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(self.select_rect.normalized())
+
         painter.end()
 
     def resizeEvent(self, event):
@@ -506,21 +541,101 @@ class _FullscreenImageLabel(QLabel):
             self._zoom_hint.move(x, max(0, y))
 
     def mousePressEvent(self, event):
+        if not self._pixmap:
+            super().mousePressEvent(event)
+            return
+
+        # 右键菜单保留
         if event.button() == Qt.RightButton:
             self.right_clicked.emit(event.globalPosition().toPoint())
             return
+
+        # 你的截图/画框逻辑
         if event.button() == Qt.LeftButton:
-            pos = event.position()
-            self._drag_start_x = pos.x()
-            self._drag_start_y = pos.y()
+            pos = event.position().toPoint()
+            self.last_pos = pos
+            self.panning = False
+            self.drag_mode = None
+
+            if self.is_capturing:
+                r = self.select_rect.normalized()
+                self.drag_mode = self.get_drag_mode(pos)
+                if not r.isNull():
+                    if self.drag_mode:
+                        self.move_offset = pos - r.topLeft()
+                    elif r.contains(pos):
+                        self.drag_mode = "move"
+                        self.move_offset = pos - r.topLeft()
+                    else:
+                        self.panning = True
+                else:
+                    self.select_rect = QRect(pos, pos)
+            else:
+                self.panning = True
+
+            # 原有图片拖拽逻辑
+            self._ensure_manual_state()
+            self._drag_start_x = event.position().x()
+            self._drag_start_y = event.position().y()
             self._drag_ox_start = self._draw_ox
             self._drag_oy_start = self._draw_oy
             self._drag_active = False
             if not self._fit_mode:
                 self.setCursor(Qt.ClosedHandCursor)
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if not self._pixmap:
+            return
+
+        pos = event.position().toPoint()
+
+        # 截图/画框逻辑
+        if self.is_capturing:
+            self.update_cursor(pos)
+            r = self.select_rect.normalized()
+
+            if self.panning and event.buttons() & Qt.LeftButton:
+                self.offset += pos - self.last_pos
+                self.last_pos = pos
+                self.update()
+                return
+
+            if event.buttons() & Qt.LeftButton:
+                if self.drag_mode == "move":
+                    self.select_rect.moveTopLeft(pos - self.move_offset)
+                elif self.drag_mode:
+                    nr = r
+                    if self.drag_mode == "tl":
+                        nr.setTopLeft(pos)
+                    elif self.drag_mode == "tr":
+                        nr.setTopRight(pos)
+                    elif self.drag_mode == "bl":
+                        nr.setBottomLeft(pos)
+                    elif self.drag_mode == "br":
+                        nr.setBottomRight(pos)
+                    elif self.drag_mode == "l":
+                        nr.setLeft(pos.x())
+                    elif self.drag_mode == "r":
+                        nr.setRight(pos.x())
+                    elif self.drag_mode == "t":
+                        nr.setTop(pos.y())
+                    elif self.drag_mode == "b":
+                        nr.setBottom(pos.y())
+                    self.select_rect = nr
+                else:
+                    self.select_rect.setBottomRight(pos)
+                self.update()
+            return
+
+        # 普通模式：图片平移
+        if self.panning and event.buttons() & Qt.LeftButton:
+            self.offset += pos - self.last_pos
+            self.last_pos = pos
+            self.update()
+
+        # 原有逻辑：拖拽图片
         if event.buttons() & Qt.LeftButton and not self._fit_mode:
             pos = event.position()
             dx = pos.x() - self._drag_start_x
@@ -532,11 +647,15 @@ class _FullscreenImageLabel(QLabel):
                 self._draw_oy = self._drag_oy_start + dy
                 self.update()
                 self._emit_transform_sync()
+
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # 双击第二次 release：吸收，不触发 click 逻辑
+            self.panning = False
+            self.drag_mode = None
+
+            # 原有点击缩放逻辑
             if self._double_click_pending:
                 self._double_click_pending = False
                 self._drag_active = False
@@ -544,75 +663,106 @@ class _FullscreenImageLabel(QLabel):
                 super().mouseReleaseEvent(event)
                 return
 
-            if not self._drag_active:
-                # 纯点击（无拖拽移动）
+            if not self._drag_active and not self.is_capturing:
                 pos = event.position()
                 mx, my = pos.x(), pos.y()
                 if self._fit_mode:
                     self._zoom_to_100(mx, my)
                 else:
-                    # 回到适配模式
                     self._fit_mode = True
                     self.setCursor(Qt.CrossCursor)
                     self.update()
                     self._emit_transform_sync()
             else:
-                # 拖拽结束，恢复张开手光标
-                if not self._fit_mode:
+                if not self._fit_mode and not self.is_capturing:
                     self.setCursor(Qt.OpenHandCursor)
             self._drag_active = False
-        super().mouseReleaseEvent(event)
 
-    def mouseDoubleClickEvent(self, event):
-        """标记双击，防止第二次 release 误触发 click 逻辑。"""
-        if event.button() == Qt.LeftButton:
-            self._double_click_pending = True
-        super().mouseDoubleClickEvent(event)
+        super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event):
         if self._pixmap is None or self._pixmap.isNull():
             return
-        # 同步手动状态（fit_mode 下先获取当前适配值）
-        self._ensure_manual_state()
 
+        self._ensure_manual_state()
         pos = event.position()
         mx, my = pos.x(), pos.y()
         self._last_wheel_mx = mx
         self._last_wheel_my = my
 
-        # 方案B：区分触控板 vs 鼠标滚轮
         pixel_delta = event.pixelDelta().y()
         angle_delta = event.angleDelta().y()
         if pixel_delta != 0:
-            # 触控板：按像素距离做连续缩放（跟手感）
             factor = 1.0 + pixel_delta * 0.002
         elif angle_delta != 0:
-            # 鼠标滚轮：6% 步进（比原来 15% 更细腻）
             factor = 1.06 if angle_delta > 0 else 1.0 / 1.06
         else:
             return
 
-        # 使用当前目标值（而非实际值）计算，支持快速连续滚轮累积
         base_scale = self._target_scale if self._zoom_anim_timer.isActive() else self._display_scale
         base_ox = self._target_ox if self._zoom_anim_timer.isActive() else self._draw_ox
         base_oy = self._target_oy if self._zoom_anim_timer.isActive() else self._draw_oy
 
-        # 鼠标下方的图片像素坐标（基于目标值）
         img_px = (mx - base_ox) / max(base_scale, 1e-10)
         img_py = (my - base_oy) / max(base_scale, 1e-10)
-
         new_scale = max(0.1, min(2.0, base_scale * factor))
 
-        # 方案A：设置目标值，启动动画插值
         self._target_scale = new_scale
         self._target_ox = mx - img_px * new_scale
         self._target_oy = my - img_py * new_scale
         self._fit_mode = False
         self.setCursor(Qt.OpenHandCursor)
+
         if not self._zoom_anim_timer.isActive():
             self._zoom_anim_timer.start()
-        # 功能3：显示缩放比例提示（跟随鼠标，显示目标值）
+
         self._show_zoom_hint(new_scale, mx, my)
+
+    def get_drag_mode(self, pos):
+        r = self.select_rect.normalized()
+        if r.isNull():
+            return None
+        rm = lambda p, v: abs(p - v) < self.resize_margin
+        if rm(pos.x(), r.left()) and rm(pos.y(), r.top()): return "tl"
+        if rm(pos.x(), r.right()) and rm(pos.y(), r.top()): return "tr"
+        if rm(pos.x(), r.left()) and rm(pos.y(), r.bottom()): return "bl"
+        if rm(pos.x(), r.right()) and rm(pos.y(), r.bottom()): return "br"
+        if rm(pos.x(), r.left()): return "l"
+        if rm(pos.x(), r.right()): return "r"
+        if rm(pos.y(), r.top()): return "t"
+        if rm(pos.y(), r.bottom()): return "b"
+        return None
+
+    # ==================== 最终光标逻辑（精确符合你的要求） ====================
+    def update_cursor(self, pos):
+        if not self.is_capturing:
+            self.setCursor(Qt.ArrowCursor)
+            return
+
+        r = self.select_rect.normalized()
+        if r.isNull():
+            self.setCursor(Qt.CrossCursor)
+            return
+
+        mode = self.get_drag_mode(pos)
+        if mode:
+            cursor_map = {
+                "tl": Qt.SizeFDiagCursor,
+                "tr": Qt.SizeBDiagCursor,
+                "bl": Qt.SizeBDiagCursor,
+                "br": Qt.SizeFDiagCursor,
+                "l": Qt.SizeHorCursor,
+                "r": Qt.SizeHorCursor,
+                "t": Qt.SizeVerCursor,
+                "b": Qt.SizeVerCursor
+            }
+            self.setCursor(cursor_map[mode])
+            return
+
+        if r.contains(pos):
+            self.setCursor(Qt.SizeAllCursor)
+        else:
+            self.setCursor(Qt.ArrowCursor)
 
     def event(self, ev):
         """拦截 macOS 触控板双指捐合缩放（QNativeGestureEvent）。"""
@@ -655,7 +805,7 @@ class _FullscreenImageLabel(QLabel):
         """
         pct = int(round(scale * 100))
         self._zoom_hint.setText(f"{pct}%")
-        hw = self._zoom_hint.width()   # 已 setFixedSize，尺寸稳定
+        hw = self._zoom_hint.width()  # 已 setFixedSize，尺寸稳定
         hh = self._zoom_hint.height()
         if mx >= 0 and my >= 0:
             # 跟随鼠标：偏右下 16px，超出边界时翻转到鼠标左上方
@@ -713,25 +863,28 @@ class FullscreenViewer(QWidget):
     prev_requested = Signal()
     next_requested = Signal()
     burst_sequence_requested = Signal(dict)
-    delete_requested = Signal(dict)   # 功能1：携带当前 photo dict
-    context_menu_requested = Signal(dict, object)   # (photo, QPoint全局坐标)
+    delete_requested = Signal(dict)  # 功能1：携带当前 photo dict
+    context_menu_requested = Signal(dict, object)  # (photo, QPoint全局坐标)
 
     def __init__(self, i18n, parent=None):
         super().__init__(parent)
         self.i18n = i18n
         self._loader: Optional[_ImageLoader] = None
-        self._preload_worker = _PreloadWorker(self)   # 预加载工作线程
-        self._photos: list = []                        # 当前完整照片列表
-        self._current_photo: dict = {}                 # 当前显示的 photo dict
+        self._preload_worker = _PreloadWorker(self)  # 预加载工作线程
+        self._photos: list = []  # 当前完整照片列表
+        self._current_photo: dict = {}  # 当前显示的 photo dict
+
+        # 👇 就加在这里
+        self._captured_pixmap = None
 
         # 功能2：锁定缩放状态（同时锁定平移位置）
         self._zoom_locked: bool = False
         self._locked_scale: float = 1.0
-        self._locked_ox: float = 0.0   # 锁定时的图片左上角 x 偏移
-        self._locked_oy: float = 0.0   # 锁定时的图片左上角 y 偏移
+        self._locked_ox: float = 0.0  # 锁定时的图片左上角 x 偏移
+        self._locked_oy: float = 0.0  # 锁定时的图片左上角 y 偏移
 
         self.setStyleSheet(f"background-color: {COLORS['bg_void']};")
-        self.setFocusPolicy(Qt.StrongFocus)            # 允许接收键盘事件
+        self.setFocusPolicy(Qt.StrongFocus)  # 允许接收键盘事件
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -777,7 +930,7 @@ class FullscreenViewer(QWidget):
         ###end
         back_btn.setObjectName("secondary")
         back_btn.setFixedHeight(36)
-        #back_btn.setMinimumWidth(100)
+        # back_btn.setMinimumWidth(100)
         back_btn.clicked.connect(self.close_requested)
         h.addWidget(back_btn)
 
@@ -791,7 +944,6 @@ class FullscreenViewer(QWidget):
         # 初始状态：焦点开启 → active 样式
         update_toogle_btn_style(self._focus_btn, True)
 
-
         # 功能2：锁定缩放按钮
         self._lock_zoom_btn = QPushButton("🔓 锁定缩放")
         self._lock_zoom_btn.setFixedHeight(36)
@@ -799,6 +951,23 @@ class FullscreenViewer(QWidget):
         self._lock_zoom_btn.clicked.connect(self._toggle_zoom_lock)
         self._update_lock_zoom_btn_style(False)
         h.addWidget(self._lock_zoom_btn)
+
+        # ===================== 截图按钮（你要的样式） =====================
+        self._capture_btn = QPushButton("📸截图")
+        self._capture_btn.setFixedHeight(36)
+        self._capture_btn.setFixedWidth(80)
+        set_btn_style(self._capture_btn)
+        h.addWidget(self._capture_btn)
+
+        self._save_btn = QPushButton("💾保存")
+        self._save_btn.setFixedHeight(36)
+        self._save_btn.setFixedWidth(80)
+        set_btn_style(self._save_btn)
+        h.addWidget(self._save_btn)
+
+        self._capture_btn.clicked.connect(self._start_capture)
+        self._save_btn.clicked.connect(self._on_save_capture)
+        # ==================================================================
 
         h.addStretch()
         # _nav_btn_style = (
@@ -814,7 +983,7 @@ class FullscreenViewer(QWidget):
         self.prev_btn.setFixedHeight(36)
         self.prev_btn.setFixedWidth(80)
         set_btn_style(self.prev_btn)
-        #self.prev_btn.setStyleSheet(_nav_btn_style)
+        # self.prev_btn.setStyleSheet(_nav_btn_style)
         self.prev_btn.clicked.connect(self.prev_requested)
         self.prev_btn.hide()
         h.addWidget(self.prev_btn)
@@ -823,7 +992,7 @@ class FullscreenViewer(QWidget):
         self.next_btn.setFixedHeight(36)
         self.next_btn.setFixedWidth(80)
         set_btn_style(self.next_btn)
-        #self.next_btn.setStyleSheet(_nav_btn_style)
+        # self.next_btn.setStyleSheet(_nav_btn_style)
         self.next_btn.clicked.connect(self.next_requested)
         self.next_btn.hide()
         h.addWidget(self.next_btn)
@@ -878,6 +1047,18 @@ class FullscreenViewer(QWidget):
 
         return bar
 
+    def _start_capture(self):
+        self._img_label.is_capturing = True
+        self._img_label.select_rect = QRect()
+        self._img_label.setCursor(Qt.CrossCursor)
+        self._img_label.update()
+
+    def _stop_capture(self):
+        self._img_label.is_capturing = False
+        self._img_label.select_rect = QRect()
+        self._img_label.setCursor(Qt.ArrowCursor)
+        self._img_label.update()
+
     def _build_bottom_bar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(44)
@@ -892,7 +1073,6 @@ class FullscreenViewer(QWidget):
         h.setSpacing(12)
 
         h.addStretch()
-
 
         return bar
 
@@ -925,7 +1105,7 @@ class FullscreenViewer(QWidget):
         if self._zoom_locked:
             # 记录当前缩放比例和平移位置
             lbl = self._img_label
-            lbl._ensure_manual_state()   # 若在 fit_mode 先同步状态
+            lbl._ensure_manual_state()  # 若在 fit_mode 先同步状态
             self._locked_scale = lbl._display_scale
             self._locked_ox = lbl._draw_ox
             self._locked_oy = lbl._draw_oy
@@ -957,6 +1137,64 @@ class FullscreenViewer(QWidget):
         """发出删除信号（携带当前 photo dict），由 ResultsBrowserWindow 处理。"""
         if self._current_photo:
             self.delete_requested.emit(self._current_photo)
+
+    # ===================== 截图功能 =====================
+    def _copy_to_clipboard(self):
+        if not self._img_label._pixmap or self._img_label.select_rect.isNull():
+            return
+
+        lbl = self._img_label
+        r = lbl.select_rect.normalized()
+
+        # 界面矩形 → 转回原始图片坐标
+        x = int((r.left() - lbl._draw_ox) / lbl._display_scale)
+        y = int((r.top() - lbl._draw_oy) / lbl._display_scale)
+        w = int(r.width() / lbl._display_scale)
+        h = int(r.height() / lbl._display_scale)
+
+        # 防止越界
+        x = max(0, x)
+        y = max(0, y)
+        w = min(w, lbl._pixmap.width() - x)
+        h = min(h, lbl._pixmap.height() - y)
+
+        if w <= 0 or h <= 0:
+            return
+
+        crop = lbl._pixmap.copy(x, y, w, h)
+        QApplication.clipboard().setPixmap(crop)
+
+    def _on_save_capture(self):
+        if not self._img_label._pixmap or self._img_label.select_rect.isNull():
+            return
+
+        lbl = self._img_label
+        r = lbl.select_rect.normalized()
+
+        # 界面矩形 → 转回原始图片坐标
+        x = int((r.left() - lbl._draw_ox) / lbl._display_scale)
+        y = int((r.top() - lbl._draw_oy) / lbl._display_scale)
+        w = int(r.width() / lbl._display_scale)
+        h = int(r.height() / lbl._display_scale)
+
+        x = max(0, x)
+        y = max(0, y)
+        w = min(w, lbl._pixmap.width() - x)
+        h = min(h, lbl._pixmap.height() - y)
+
+        if w <= 0 or h <= 0:
+            return
+
+        crop = lbl._pixmap.copy(x, y, w, h)
+
+        from PySide6.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory()
+        if not folder:
+            return
+
+        path = os.path.join(folder, f"cap_{int(time.time())}.jpg")
+        crop.save(path, "JPG", 100)
+        self._stop_capture()
 
     # ------------------------------------------------------------------
     #  公共接口
@@ -995,12 +1233,13 @@ class FullscreenViewer(QWidget):
         # 功能2：锁定缩放 — 换图前保存当前 scale + ox/oy，换图后直接还原
         if self._zoom_locked:
             lbl = self._img_label
-            lbl._ensure_manual_state()   # fit_mode 下先同步状态
+            lbl._ensure_manual_state()  # fit_mode 下先同步状态
             self._locked_scale = lbl._display_scale
             self._locked_ox = lbl._draw_ox
             self._locked_oy = lbl._draw_oy
 
-        filename = os.path.basename(photo.get("current_path") or photo.get("original_path") or "") or photo.get("filename", "")
+        filename = os.path.basename(photo.get("current_path") or photo.get("original_path") or "") or photo.get(
+            "filename", "")
         self._filename_label.setText(filename)
         self._update_burst_info(photo)
 
@@ -1094,7 +1333,7 @@ class FullscreenViewer(QWidget):
             # self._set_burst_button_style(position_mode=False)
             # self.prev_btn.hide()
             # self.next_btn.hide()
-            #发送自动展开信号，方便浏览
+            # 发送自动展开信号，方便浏览
             self._burst_info_btn.clicked.emit()
             return
 
@@ -1210,7 +1449,7 @@ class FullscreenViewer(QWidget):
         #         return op
         ###old skywalkder
         op = photo.get("current_path")
-        if op :
+        if op:
             op = os.path.splitext(op)[0] + ".jpg"
         if os.path.isfile(op):
             return op
@@ -1223,7 +1462,7 @@ class FullscreenViewer(QWidget):
         if not img.isNull():
             if path:
                 _hd_cache.put(path, img)
-            
+
             # 主线程中转换为 QPixmap
             px = QPixmap.fromImage(img)
             self._img_label.set_pixmap(px)
@@ -1274,6 +1513,14 @@ class FullscreenViewer(QWidget):
     def keyPressEvent(self, event):
         from PySide6.QtCore import Qt as _Qt
         key = event.key()
+
+        if self._img_label.is_capturing:
+            if key == Qt.Key_Escape:
+                self._stop_capture()
+            elif key == Qt.Key_C and event.modifiers() == Qt.ControlModifier:
+                self._copy_to_clipboard()
+            return
+
         if key in (_Qt.Key_Left, _Qt.Key_Up):
             self.prev_requested.emit()
         elif key in (_Qt.Key_Right, _Qt.Key_Down):
