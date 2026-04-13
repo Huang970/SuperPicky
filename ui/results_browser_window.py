@@ -291,7 +291,13 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
     open_action.setEnabled(bool(filepath))
     open_action.triggered.connect(_default_image_viewer)
     menu.addAction(open_action)
-    #end
+
+    if parent_widget._stack.currentIndex() == 1 and parent_widget._fullscreen._img_label.is_capturing:
+        crop_app = "拷贝到剪辑版"
+        crop_action = QAction(crop_app, parent_widget)
+        crop_action.setEnabled(True)
+        crop_action.triggered.connect(parent_widget._fullscreen._copy_to_clipboard)
+        menu.addAction(crop_action)
 
     # 用户配置的外部应用列表（设置 → 外部应用）
     external_apps = get_advanced_config().get_external_apps()
@@ -332,6 +338,8 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
         copy_action.triggered.connect(_copy_path)
     menu.addAction(copy_action)
     menu.exec(pos)
+
+
 
 def _move_to_trash(filepath: str) -> bool:
     """将文件移入系统回收站（跨平台）。返回是否成功。"""
