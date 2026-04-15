@@ -73,6 +73,7 @@ class FilterPanel(QWidget):
     发出信号 filters_changed(dict) 通知外部刷新图片网格。
     """
     filters_changed = Signal(dict)
+    burst_expand_changed = Signal(bool)
 
     def __init__(self, i18n, parent=None):
         super().__init__(parent)
@@ -212,6 +213,29 @@ class FilterPanel(QWidget):
         self.singlePhotoCheck.clicked.connect(self._on_show_single_click)
         layout.addWidget(w)
 
+        self.expandBurstCheck = QCheckBox("展开全部连拍")
+        self.expandBurstCheck.setChecked(False)
+        self.expandBurstCheck.setStyleSheet(f"""
+             QCheckBox {{
+                 color: {COLORS['text_secondary']};
+                 font-size: 12px;
+                 spacing: 4px;
+             }}
+             QCheckBox::indicator {{
+                 width: 14px;
+                 height: 14px;
+                 border-radius: 3px;
+                 border: 1px solid {COLORS['border']};
+                 background: transparent;
+             }}
+             QCheckBox::indicator:checked {{
+                 background-color: {COLORS['accent']};
+                 border-color: {COLORS['accent']};
+             }}
+         """)
+        self.expandBurstCheck.clicked.connect(self._on_expandburst_click)
+        layout.addWidget(self.expandBurstCheck)
+
         layout.addWidget(self._divider())
 
         # --- 对焦状态（多选 checkbox）---
@@ -291,6 +315,10 @@ class FilterPanel(QWidget):
     # ------------------------------------------------------------------
     #  评分按钮（单选，横排）
     # -----------------------------------------------------------------
+
+    def _on_expandburst_click(self):
+        self.burst_expand_changed.emit(self.expandBurstCheck.isChecked())
+
     def _on_show_burst_click(self):
         # 自动获取当前所有筛选条件，并触发刷新
         self.filters_changed.emit(self.get_filters())

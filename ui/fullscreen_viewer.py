@@ -1268,12 +1268,6 @@ class FullscreenViewer(QWidget):
         self._update_lock_zoom_btn_style(False)
         h.addWidget(self._lock_zoom_btn)
 
-        # ===================== 截图按钮（你要的样式） =====================
-        self._capture_btn = QPushButton("📸 截图")
-        self._capture_btn.setFixedHeight(36)
-        self._capture_btn.setFixedWidth(67)
-        set_btn_style(self._capture_btn)
-        h.addWidget(self._capture_btn)
 
         self._crop_ratio_combo = QComboBox()
         self._crop_ratio_combo.addItems(["4:3", "3:4", "16:9", "9:16", "自由裁切"])
@@ -1289,24 +1283,27 @@ class FullscreenViewer(QWidget):
                 background: {COLORS['bg_primary']};
                 border: 1px solid #33cc33;
                 border-radius: 3px;
-                font-size: 11px;  /* 缩小1px，省空间 */
+                font-size: 12px;  
                 font-family: {FONTS['mono']};
-                padding: 1px 2px; /* 极小内边距，省空间 */
-                min-width: 55px;
-                max-width: 100px;
+                padding-left: 8px; 
+                padding-right: 8px;
+                min-width: 50px;
+                max-width: 60px;
             }}
             QComboBox::drop-down {{
                 border: none;
-                width: 8px;  /* 箭头刚好大小 */
-                padding: 0;
+
                 margin-left: 1px;
-            }}
-            QComboBox::down-arrow {{
-                width: 4px;
-                height: 4px;
             }}
         """)
         h.addWidget(self._crop_ratio_combo)
+
+        # ===================== 截图按钮（你要的样式） =====================
+        self._capture_btn = QPushButton("📸 截图")
+        self._capture_btn.setFixedHeight(36)
+        self._capture_btn.setFixedWidth(67)
+        set_btn_style(self._capture_btn)
+        h.addWidget(self._capture_btn)
 
         self._save_btn = QPushButton("💾 保存")
         self._save_btn.setFixedHeight(36)
@@ -1514,6 +1511,7 @@ class FullscreenViewer(QWidget):
         crop = lbl._pixmap.copy(x, y, w, h)
         self._captured_pixmap = crop
         QApplication.clipboard().setPixmap(crop)
+        self.window()._briefly_display_status("✅ 截图已保存到剪辑版")
 
     def _on_save_capture(self):
         if not self._img_label._pixmap or self._img_label.select_rect.isNull():
@@ -1546,6 +1544,7 @@ class FullscreenViewer(QWidget):
 
         path = os.path.join(folder, f"cap_{filename}_{int(time.time())}.jpg")
         crop.save(path, "JPG", 100)
+        self.window()._briefly_display_status(f"✅ 截图文件保存成功：{path}")
         self._stop_capture()
 
     # ------------------------------------------------------------------

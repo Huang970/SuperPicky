@@ -321,7 +321,7 @@ class ThumbnailLoader(QObject):
     def _get_next_task(self):
         with self._cond:
             while not self._cancelled and not self._pending_set:
-                self._cond.wait()
+                self._cond.wait(timeout=0.2)
             
             if self._cancelled or not self._pending_set:
                 return None

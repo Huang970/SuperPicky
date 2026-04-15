@@ -18,6 +18,7 @@ import glob
 import shutil
 import winreg
 from collections import Counter
+from ctypes.wintypes import BOOL
 from datetime import datetime
 
 from PySide6 import QtCore
@@ -27,7 +28,7 @@ from PySide6.QtWidgets import (
     QSlider, QComboBox, QMessageBox, QSizePolicy, QApplication,
     QStackedWidget, QMenu,QLineEdit
 )
-from PySide6.QtCore import Qt, Signal, Slot, QProcess
+from PySide6.QtCore import Qt, Signal, Slot, QProcess,QTimer
 from PySide6.QtGui import QAction, QKeyEvent, QIcon, QFont
 
 from ui.styles import COLORS, GLOBAL_STYLE, FONTS
@@ -479,6 +480,7 @@ class ResultsBrowserWindow(QMainWindow):
         # 左侧：过滤面板
         self._filter_panel = FilterPanel(self.i18n, self)
         self._filter_panel.filters_changed.connect(self._apply_filters)
+        self._filter_panel.burst_expand_changed.connect(self._apply_cancel_burst)
         main_h.addWidget(self._filter_panel)
 
         # 中央：网格 + 工具栏
@@ -582,24 +584,26 @@ class ResultsBrowserWindow(QMainWindow):
         self._copyTo_btn.clicked.connect(self._copy_selected_photos)
         layout.addWidget(self._copyTo_btn)
 
-        #创建浏览目录按钮
-        self._browser_btn = QPushButton(self.i18n.t("browser.export_dir"))
-        self._browser_btn.setObjectName("browser")
-        self._browser_btn.setFixedHeight(32)
-        self._browser_btn.setFixedWidth(62)
-        self._browser_btn.setToolTip("选定照片复制目录")
-        set_btn_style(self._browser_btn)
-        self._browser_btn.clicked.connect(self._browser_btn_request)
-        layout.addWidget(self._browser_btn)
+        layout.addStretch()
 
-        # 目录显示标签
-        self._dir_label = QLabel("", self)
-        self._dir_label.setFixedWidth(700)
-        self._dir_label.setMinimumWidth(700)
-        self._dir_label.setMaximumWidth(700)
-        self._dir_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        self._dir_label.setWordWrap(False)
-        layout.addWidget(self._dir_label)
+        # #创建浏览目录按钮
+        # self._browser_btn = QPushButton(self.i18n.t("browser.export_dir"))
+        # self._browser_btn.setObjectName("browser")
+        # self._browser_btn.setFixedHeight(32)
+        # self._browser_btn.setFixedWidth(62)
+        # self._browser_btn.setToolTip("选定照片复制目录")
+        # set_btn_style(self._browser_btn)
+        # self._browser_btn.clicked.connect(self._browser_btn_request)
+        # layout.addWidget(self._browser_btn)
+        #
+        # # 目录显示标签
+        # self._dir_label = QLabel("", self)
+        # self._dir_label.setFixedWidth(700)
+        # self._dir_label.setMinimumWidth(700)
+        # self._dir_label.setMaximumWidth(700)
+        # self._dir_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        # self._dir_label.setWordWrap(False)
+        # layout.addWidget(self._dir_label)
 
         # 对比按钮（C5，多选2张时显示）
         self._compare_btn = QPushButton(self.i18n.t("browser.compare_btn"))
@@ -651,21 +655,21 @@ class ResultsBrowserWindow(QMainWindow):
         last_dir = getattr(self, "_last_target_dir", "")
 
         # 如果为空打开对话框（默认从上次目录开始）
-        if not last_dir:
-            target_dir = QFileDialog.getExistingDirectory(
-                self,
-                "请选择要导出的目标文件夹",
-                last_dir  # 这里传入上次路径
-            )
+        # if not last_dir:
+        target_dir = QFileDialog.getExistingDirectory(
+            self,
+            "请选择要导出的目标文件夹",
+            last_dir  # 这里传入上次路径
+        )
 
-            # 如果用户选择了路径，保存起来，下次用
-            if target_dir:
-                self._last_target_dir = target_dir
-                self._dir_babel_setTruncatedText()
-            else:
-                return
+        # 如果用户选择了路径，保存起来，下次用
+        if target_dir:
+            self._last_target_dir = target_dir
+            # self._dir_babel_setTruncatedText()
         else:
-            target_dir = last_dir
+            return
+        # else:
+        #     target_dir = last_dir
 
         success_count = 0
         fail_files = []
@@ -691,7 +695,8 @@ class ResultsBrowserWindow(QMainWindow):
         if fail_files:
             msg += f"\n失败：{len(fail_files)} 张"
 
-        QMessageBox.information(self, "完成", msg)
+        #QMessageBox.information(self, "完成", msg)
+        self.window()._briefly_display_status(msg)
 
     def _dir_babel_setTruncatedText(self):
         target_dir = getattr(self, "_last_target_dir", "")
@@ -718,26 +723,44 @@ class ResultsBrowserWindow(QMainWindow):
         # 如果用户选择了路径，保存起来，下次用
         if target_dir:
             self._last_target_dir = target_dir
-            self._dir_babel_setTruncatedText()
+            # self._dir_babel_setTruncatedText()
         else:
             return
 
     # Added end
 
+    # def _setup_statusbar(self):
+    #     self._status_bar = QStatusBar()
+    #     self._status_bar.setStyleSheet(f"""
+    #         QStatusBar {{
+    #             background-color: {COLORS['bg_elevated']};
+    #             color: {COLORS['text_secondary']};
+    #             font-size: 11px;
+    #             border-top: 1px solid {COLORS['border_subtle']};
+    #         }}
+    #     """)
+    #     self.setStatusBar(self._status_bar)
+    #     self._status_bar.showMessage("—",0)
+
     def _setup_statusbar(self):
+        # ========== 这些全部保留 ==========
         self._status_bar = QStatusBar()
-        self._status_bar.setStyleSheet(f"""
-            QStatusBar {{
+        self.setStatusBar(self._status_bar)
+
+        # ========== 只加这两行 ==========
+        self._status_label = QLabel("—")
+        self._status_label.setStyleSheet(f"""
+            QLabel {{
                 background-color: {COLORS['bg_elevated']};
                 color: {COLORS['text_secondary']};
                 font-size: 11px;
                 border-top: 1px solid {COLORS['border_subtle']};
             }}
         """)
-        self.setStatusBar(self._status_bar)
-        self._status_bar.showMessage("—")
+        self._status_bar.addWidget(self._status_label, 1)
 
-    # ------------------------------------------------------------------
+
+        # ------------------------------------------------------------------
     #  公共接口
     # ------------------------------------------------------------------
 
@@ -785,7 +808,7 @@ class ResultsBrowserWindow(QMainWindow):
 
         self._dir_combo.blockSignals(False)
         self._directory = directory
-        self._dir_babel_setTruncatedText()
+        # self._dir_babel_setTruncatedText()
         if len(processed) > 1:
             self._load_merged(directory, processed)
         elif len(processed) == 1:
@@ -902,6 +925,26 @@ class ResultsBrowserWindow(QMainWindow):
             resolved["burst_total"] = self._burst_totals.get(bid, 1)
         return resolved
 
+    @Slot(bool)
+    def _apply_cancel_burst(self, burst_expand_all:bool):
+        self._build_expand_burst(burst_expand_all)
+        self._update_display_list()
+
+    def _build_expand_burst(self,burst_expand_all:bool):
+        self._expanded_bursts.clear()
+        if burst_expand_all:
+            # 统计所有连拍组的照片数量
+            burst_count = {}
+            for p in self._raw_filtered_photos:
+                bid = p.get("burst_id")
+                if bid is not None:
+                    burst_count[bid] = burst_count.get(bid, 0) + 1
+
+            # 自动处理：只有 >=2 张的连拍组才加入展开
+            for burst_id, count in burst_count.items():
+                if count >= 2:
+                    self._expanded_bursts.add(burst_id)
+
     @Slot(dict)
     def _apply_filters(self, filters: dict):
         if not self._db:
@@ -941,6 +984,9 @@ class ResultsBrowserWindow(QMainWindow):
         filtered = len(resolved_photos)
         self._update_status(total, filtered)
         self._filter_panel.update_count(filtered)
+
+        #连拍全展开与否，更新展开集合
+        self._build_expand_burst(self._filter_panel.expandBurstCheck.isChecked())
 
         self._update_display_list()
 
@@ -1553,10 +1599,36 @@ class ResultsBrowserWindow(QMainWindow):
     #  工具方法
     # ------------------------------------------------------------------
 
+    # def _update_status(self, total: int, filtered: int):
+    #     t = self.i18n.t("browser.total_photos").format(total=total)
+    #     f = self.i18n.t("browser.filtered_photos").format(count=filtered)
+    #     self._status_bar.showMessage(f"{t}  |  {f}",0)
     def _update_status(self, total: int, filtered: int):
         t = self.i18n.t("browser.total_photos").format(total=total)
         f = self.i18n.t("browser.filtered_photos").format(count=filtered)
-        self._status_bar.showMessage(f"{t}  |  {f}")
+        self._status_label.setText(f"{t}  |  {f}")
+
+    def _briefly_display_status(self, msg, msec=5000):
+        """
+        临时显示绿色高亮状态栏提示，自动恢复原有内容和颜色
+        """
+        if not hasattr(self, "_status_label"):
+            return
+
+        # 1. 保存当前的 文字 + 原有样式表
+        old_text = self._status_label.text()
+        old_style = self._status_label.styleSheet()
+
+        # 2. 设置绿色高亮提示
+        self._status_label.setStyleSheet("color: #00C853; font-weight: bold;")
+        self._status_label.setText(msg)
+
+        # 3. 计时结束 → 恢复原来的文字和样式
+        def restore():
+            self._status_label.setText(old_text)
+            self._status_label.setStyleSheet(old_style)
+
+        QTimer.singleShot(msec, restore)
 
     def _show_no_db_hint(self, directory: str):
         QMessageBox.information(

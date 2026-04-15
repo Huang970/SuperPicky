@@ -261,18 +261,7 @@ class DetailPanel(QWidget):
         nb_layout.addWidget(prev_btn)
         nb_layout.addWidget(next_btn)
         layout.addWidget(nav_bar)
-
-        # --- 元数据滚动区域 ---
-        meta_scroll = QScrollArea()
-        meta_scroll.setWidgetResizable(True)
-        meta_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        meta_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-
-        meta_container = QWidget()
-        meta_container.setStyleSheet("background: transparent;")
-        meta_layout = QVBoxLayout(meta_container)
-        meta_layout.setContentsMargins(16, 12, 16, 16)
-        meta_layout.setSpacing(12)
+        layout.addSpacing(5)
 
         # 评分行（大号显示 + ▼/▲ 调整按钮）
         rating_row = QHBoxLayout()
@@ -342,9 +331,21 @@ class DetailPanel(QWidget):
         inc_btn.clicked.connect(self._on_rating_inc)
         rating_row.addWidget(inc_btn)
 
-        meta_layout.addLayout(rating_row)
+        layout.addLayout(rating_row)
 
-        meta_layout.addWidget(self._divider())
+        # --- 元数据滚动区域 ---
+        meta_scroll = QScrollArea()
+        meta_scroll.setWidgetResizable(True)
+        meta_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        meta_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        meta_container = QWidget()
+        meta_container.setStyleSheet("background: transparent;")
+        meta_layout = QVBoxLayout(meta_container)
+        meta_layout.setContentsMargins(16, 12, 16, 16)
+        meta_layout.setSpacing(12)
+
+        #meta_layout.addWidget(self._divider())
 
         # FormLayout 元数据行
         form = QFormLayout()

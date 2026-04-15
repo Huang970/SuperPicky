@@ -596,6 +596,113 @@ class WorkerThread(threading.Thread):
         _log_to_file("\n".join(_end_lines), self.dir_path, file_only=True)
         # ────────────────────────────────────────────────────────
 
+class PreloadThread(QThread):
+    log_signal = Signal(object, str)  # (消息, 等级)
+    finished_signal = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._preload_done = False
+
+    def run(self):
+        def _emit_and_log(msg, level="info"):
+            self.log_signal.emit(msg, level)
+            try:
+                from tools.utils import log_message, get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message(msg, d, file_only=True)
+            except Exception:
+                pass
+
+        try:
+            import psutil
+            vm = psutil.virtual_memory()
+            free_gb = vm.available / (1024 ** 3)
+            if free_gb < 4.0:
+                _emit_and_log(f"可用内存过低: {free_gb:.1f}GB", "warning")
+            else:
+                _emit_and_log(f"可用内存充足: {free_gb:.1f}GB", "info")
+        except ImportError:
+            pass
+
+        _emit_and_log("正在后台预加载所有AI模型...", "info")
+        results = []
+
+        # 1. YOLO
+        try:
+            from ai_model import load_yolo_model
+            load_yolo_model(log_callback=lambda m, t="info": self.log_signal.emit(m, t))
+            _emit_and_log("✅ YOLO模型加载完成", "success")
+            results.append(("YOLO", True, None))
+        except Exception as e:
+            _emit_and_log(f"❌ YOLO加载失败: {e}", "warning")
+            results.append(("YOLO", False, str(e)))
+
+        # 2. 关键点
+        try:
+            from core.keypoint_detector import get_keypoint_detector
+            get_keypoint_detector().load_model()
+            _emit_and_log("✅ 关键点模型加载完成", "success")
+            results.append(("Keypoint", True, None))
+        except Exception as e:
+            _emit_and_log(f"❌ 关键点模型加载失败: {e}", "warning")
+            results.append(("Keypoint", False, str(e)))
+
+        # 3. 飞版
+        try:
+            from core.flight_detector import get_flight_detector
+            get_flight_detector().load_model()
+            _emit_and_log("✅ 飞版检测模型加载完成", "success")
+            results.append(("Flight", True, None))
+        except Exception as e:
+            _emit_and_log(f"❌ 飞版模型加载失败: {e}", "warning")
+            results.append(("Flight", False, str(e)))
+
+        # 4. IQA
+        try:
+            from config import get_best_device
+            from iqa_scorer import get_iqa_scorer
+            get_iqa_scorer(device=get_best_device().type)
+            _emit_and_log("✅ 美学评分模型加载完成", "success")
+            results.append(("IQA", True, None))
+        except Exception as e:
+            _emit_and_log(f"❌ 美学评分模型加载失败: {e}", "warning")
+            results.append(("IQA", False, str(e)))
+
+        # 5. 识鸟
+        try:
+            from birdid.bird_identifier import get_classifier
+            get_classifier()
+            _emit_and_log("✅ 识鸟模型加载完成", "success")
+            results.append(("BirdID", True, None))
+        except Exception as e:
+            _emit_and_log(f"❌ 识鸟模型加载失败: {e}", "warning")
+            results.append(("BirdID", False, str(e)))
+
+        # 汇总日志
+        ok_names = [n for n, s, _ in results if s]
+        fail_items = [(n, e) for n, s, e in results if not s]
+        try:
+            from tools.utils import log_message, get_active_log_directory
+            d = get_active_log_directory()
+            if d:
+                log_message("\n".join([
+                    "[Preload Summary]",
+                    *[f"  ✅ {n}" for n in ok_names],
+                    *[f"  ❌ {n}: {e}" for n, e in fail_items]
+                ]), d, file_only=True)
+        except Exception:
+            pass
+
+        if not fail_items:
+            _emit_and_log("🎉 所有模型预加载完成", "success")
+        else:
+            failed = ", ".join(n for n, _ in fail_items)
+            _emit_and_log(f"⚠️  预加载完成，部分模型失败：{failed}", "warning")
+
+        self._preload_done = True
+        self.finished_signal.emit()
 
 class SuperPickyMainWindow(QMainWindow):
     """SuperPicky 主窗口 - 极简艺术风格"""
@@ -2736,123 +2843,133 @@ class SuperPickyMainWindow(QMainWindow):
 
     # ========== V4.2: 模型预加载功能 ==========
 
+    # def _preload_all_models(self):
+    #     """后台预加载所有AI模型（不阻塞UI）"""
+    #     import threading
+    #
+    #     def _emit_and_log(msg, level="info"):
+    #         """同时发送到 UI 和 superpicky.log"""
+    #         self.log_signal.emit(msg, level)
+    #         try:
+    #             from tools.utils import log_message
+    #             from tools.utils import get_active_log_directory
+    #             d = get_active_log_directory()
+    #             if d:
+    #                 log_message(msg, d, file_only=True)
+    #         except Exception:
+    #             pass
+    #
+    #     def preload_task():
+    #         # RAM 检查（psutil 可选依赖，缺失时跳过）
+    #         try:
+    #             import psutil
+    #             vm = psutil.virtual_memory()
+    #             free_gb = vm.available / (1024 ** 3)
+    #             if free_gb < 4.0:
+    #                 _emit_and_log(
+    #                     self.i18n.t("health.ram_low", free=f"{free_gb:.1f}"),
+    #                     "warning",
+    #                 )
+    #             else:
+    #                 _emit_and_log(
+    #                     self.i18n.t("health.ram_ok", free=f"{free_gb:.1f}"),
+    #                     "info",
+    #                 )
+    #         except ImportError:
+    #             pass  # psutil 未安装，跳过 RAM 检查
+    #
+    #         _emit_and_log(self.i18n.t("preload.preloading_models"), "info")
+    #         results = []
+    #
+    #         # 1. YOLO 检测模型
+    #         try:
+    #             from ai_model import load_yolo_model
+    #             load_yolo_model(log_callback=lambda msg, tag="info": self.log_signal.emit(msg, tag))
+    #             self.log_signal.emit(self.i18n.t("preload.yolo_loaded"), "success")
+    #             results.append(("YOLO", True, None))
+    #         except Exception as e:
+    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"YOLO: {e}"), "warning")
+    #             results.append(("YOLO", False, str(e)))
+    #
+    #         # 2. 关键点检测模型
+    #         try:
+    #             from core.keypoint_detector import get_keypoint_detector
+    #             get_keypoint_detector().load_model()
+    #             self.log_signal.emit(self.i18n.t("preload.keypoint_loaded"), "success")
+    #             results.append(("Keypoint", True, None))
+    #         except Exception as e:
+    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Keypoint: {e}"), "warning")
+    #             results.append(("Keypoint", False, str(e)))
+    #
+    #         # 3. 飞版检测模型
+    #         try:
+    #             from core.flight_detector import get_flight_detector
+    #             get_flight_detector().load_model()
+    #             self.log_signal.emit(self.i18n.t("preload.flight_loaded"), "success")
+    #             results.append(("Flight", True, None))
+    #         except Exception as e:
+    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Flight: {e}"), "warning")
+    #             results.append(("Flight", False, str(e)))
+    #
+    #         # 4. IQA/TOPIQ 美学评分模型
+    #         try:
+    #             from config import get_best_device
+    #             from iqa_scorer import get_iqa_scorer
+    #             get_iqa_scorer(device=get_best_device().type)
+    #             self.log_signal.emit(self.i18n.t("preload.iqa_loaded", fallback="✅ 美学评分模型已加载"), "success")
+    #             results.append(("IQA", True, None))
+    #         except Exception as e:
+    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"IQA: {e}"), "warning")
+    #             results.append(("IQA", False, str(e)))
+    #
+    #         # 5. 识鸟模型
+    #         try:
+    #             from birdid.bird_identifier import get_classifier
+    #             get_classifier()
+    #             self.log_signal.emit(self.i18n.t("preload.birdid_loaded"), "success")
+    #             results.append(("BirdID", True, None))
+    #         except Exception as e:
+    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"BirdID: {e}"), "warning")
+    #             results.append(("BirdID", False, str(e)))
+    #
+    #         # 汇总：GUI 只显示一行结论，详情写入日志文件
+    #         ok_names = [name for name, s, _ in results if s]
+    #         fail_items = [(name, err) for name, s, err in results if not s]
+    #         summary_lines = ["[Preload Summary]"]
+    #         for name in ok_names:
+    #             summary_lines.append(f"  ✅ {name}")
+    #         for name, err in fail_items:
+    #             summary_lines.append(f"  ❌ {name}: {err}")
+    #         try:
+    #             from tools.utils import log_message, get_active_log_directory
+    #             d = get_active_log_directory()
+    #             if d:
+    #                 log_message("\n".join(summary_lines), d, file_only=True)
+    #         except Exception:
+    #             pass
+    #
+    #         if not fail_items:
+    #             self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
+    #         else:
+    #             failed_str = ", ".join(name for name, _ in fail_items)
+    #             self.log_signal.emit(
+    #                 self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
+    #                 "warning"
+    #             )
+    #         self._preload_done = True
+    #
+    #     thread = threading.Thread(target=preload_task, daemon=True)
+    #     thread.start()
+
+    # -----------------------------------------------------------------------------
+    # 函数改成安全版
+    # -----------------------------------------------------------------------------
     def _preload_all_models(self):
-        """后台预加载所有AI模型（不阻塞UI）"""
-        import threading
-
-        def _emit_and_log(msg, level="info"):
-            """同时发送到 UI 和 superpicky.log"""
-            self.log_signal.emit(msg, level)
-            try:
-                from tools.utils import log_message
-                from tools.utils import get_active_log_directory
-                d = get_active_log_directory()
-                if d:
-                    log_message(msg, d, file_only=True)
-            except Exception:
-                pass
-
-        def preload_task():
-            # RAM 检查（psutil 可选依赖，缺失时跳过）
-            try:
-                import psutil
-                vm = psutil.virtual_memory()
-                free_gb = vm.available / (1024 ** 3)
-                if free_gb < 4.0:
-                    _emit_and_log(
-                        self.i18n.t("health.ram_low", free=f"{free_gb:.1f}"),
-                        "warning",
-                    )
-                else:
-                    _emit_and_log(
-                        self.i18n.t("health.ram_ok", free=f"{free_gb:.1f}"),
-                        "info",
-                    )
-            except ImportError:
-                pass  # psutil 未安装，跳过 RAM 检查
-
-            _emit_and_log(self.i18n.t("preload.preloading_models"), "info")
-            results = []
-
-            # 1. YOLO 检测模型
-            try:
-                from ai_model import load_yolo_model
-                load_yolo_model(log_callback=lambda msg, tag="info": self.log_signal.emit(msg, tag))
-                self.log_signal.emit(self.i18n.t("preload.yolo_loaded"), "success")
-                results.append(("YOLO", True, None))
-            except Exception as e:
-                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"YOLO: {e}"), "warning")
-                results.append(("YOLO", False, str(e)))
-
-            # 2. 关键点检测模型
-            try:
-                from core.keypoint_detector import get_keypoint_detector
-                get_keypoint_detector().load_model()
-                self.log_signal.emit(self.i18n.t("preload.keypoint_loaded"), "success")
-                results.append(("Keypoint", True, None))
-            except Exception as e:
-                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Keypoint: {e}"), "warning")
-                results.append(("Keypoint", False, str(e)))
-
-            # 3. 飞版检测模型
-            try:
-                from core.flight_detector import get_flight_detector
-                get_flight_detector().load_model()
-                self.log_signal.emit(self.i18n.t("preload.flight_loaded"), "success")
-                results.append(("Flight", True, None))
-            except Exception as e:
-                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Flight: {e}"), "warning")
-                results.append(("Flight", False, str(e)))
-
-            # 4. IQA/TOPIQ 美学评分模型
-            try:
-                from config import get_best_device
-                from iqa_scorer import get_iqa_scorer
-                get_iqa_scorer(device=get_best_device().type)
-                self.log_signal.emit(self.i18n.t("preload.iqa_loaded", fallback="✅ 美学评分模型已加载"), "success")
-                results.append(("IQA", True, None))
-            except Exception as e:
-                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"IQA: {e}"), "warning")
-                results.append(("IQA", False, str(e)))
-
-            # 5. 识鸟模型
-            try:
-                from birdid.bird_identifier import get_classifier
-                get_classifier()
-                self.log_signal.emit(self.i18n.t("preload.birdid_loaded"), "success")
-                results.append(("BirdID", True, None))
-            except Exception as e:
-                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"BirdID: {e}"), "warning")
-                results.append(("BirdID", False, str(e)))
-
-            # 汇总：GUI 只显示一行结论，详情写入日志文件
-            ok_names = [name for name, s, _ in results if s]
-            fail_items = [(name, err) for name, s, err in results if not s]
-            summary_lines = ["[Preload Summary]"]
-            for name in ok_names:
-                summary_lines.append(f"  ✅ {name}")
-            for name, err in fail_items:
-                summary_lines.append(f"  ❌ {name}: {err}")
-            try:
-                from tools.utils import log_message, get_active_log_directory
-                d = get_active_log_directory()
-                if d:
-                    log_message("\n".join(summary_lines), d, file_only=True)
-            except Exception:
-                pass
-
-            if not fail_items:
-                self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
-            else:
-                failed_str = ", ".join(name for name, _ in fail_items)
-                self.log_signal.emit(
-                    self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
-                    "warning"
-                )
-            self._preload_done = True
-
-        thread = threading.Thread(target=preload_task, daemon=True)
-        thread.start()
+        """后台预加载所有AI模型（PySide6 QThread 绝不崩溃）"""
+        self.preload_thread = PreloadThread()
+        self.preload_thread.log_signal.connect(self.log_signal.emit)
+        self.preload_thread.finished_signal.connect(lambda: setattr(self, "_preload_done", True))
+        self.preload_thread.start()
 
     # ========== V4.0.1: 更新检测功能 ==========
 

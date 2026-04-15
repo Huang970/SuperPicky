@@ -7,6 +7,8 @@ Version: 4.0.6 - Country Selection Simplification
 
 import sys
 import os
+os.environ["QT_DISABLE_TORCH_WORKAROUND"] = "1"
+os.environ["PYSIDE6_DISABLE_TYPE_CHECK"] = "1"
 
 # V3.9.3: 修复 macOS PyInstaller 打包后的多进程问题
 # 必须在所有其他导入之前设置
