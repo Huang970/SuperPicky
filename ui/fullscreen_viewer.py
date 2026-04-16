@@ -705,11 +705,17 @@ class _FullscreenImageLabel(QLabel):
             self.update_cursor(pos)
             r = self.select_rect.normalized()
 
+            # ====================== 截图模式拖动（修复好的）======================
             if self.panning and event.buttons() & Qt.LeftButton:
-                self.offset += pos - self.last_pos
+                dx = pos.x() - self.last_pos.x()
+                dy = pos.y() - self.last_pos.y()
+                self._draw_ox += dx
+                self._draw_oy += dy
                 self.last_pos = pos
+                self.setCursor(Qt.ClosedHandCursor)
                 self.update()
                 return
+            # ====================================================================
 
             if event.buttons() & Qt.LeftButton:
                 # ==========================
@@ -828,6 +834,7 @@ class _FullscreenImageLabel(QLabel):
 
         # 普通模式拖动
         if self.panning and event.buttons() & Qt.LeftButton:
+            self.setCursor(Qt.ClosedHandCursor)
             self.offset += pos - self.last_pos
             self.last_pos = pos
             self.update()
@@ -852,7 +859,6 @@ class _FullscreenImageLabel(QLabel):
     #
     #     pos = event.position().toPoint()
     #
-    #     # 截图/画框逻辑
     #     if self.is_capturing:
     #         self.update_cursor(pos)
     #         r = self.select_rect.normalized()
@@ -864,39 +870,126 @@ class _FullscreenImageLabel(QLabel):
     #             return
     #
     #         if event.buttons() & Qt.LeftButton:
+    #             # ==========================
+    #             # 全局读取当前选中比例（永远记住，不会乱变）
+    #             # ==========================
+    #             try:
+    #                 ratio_text = self._crop_ratio_combo.currentText()
+    #             except:
+    #                 ratio_text = "4:3"
+    #
+    #             free_crop = (ratio_text == "自由裁切")
+    #             w_ratio, h_ratio = 4, 3
+    #
+    #             # 强制同步当前比例！！！
+    #             if ratio_text == "3:4":
+    #                 w_ratio, h_ratio = 3, 4
+    #             elif ratio_text == "16:9":
+    #                 w_ratio, h_ratio = 16, 9
+    #             elif ratio_text == "9:16":
+    #                 w_ratio, h_ratio = 9, 16
+    #
+    #             # 移动框
     #             if self.drag_mode == "move":
     #                 self.select_rect.moveTopLeft(pos - self.move_offset)
-    #             elif self.drag_mode:
-    #                 nr = r
-    #                 if self.drag_mode == "tl":
-    #                     nr.setTopLeft(pos)
+    #                 self.update()
+    #                 return
+    #
+    #             # ==========================
+    #             # 拖动角/边：使用当前比例，永不跳回 4:3
+    #             # ==========================
+    #             if self.drag_mode and self.resize_fixed_pos is not None and not free_crop:
+    #                 fx = self.resize_fixed_pos.x()
+    #                 fy = self.resize_fixed_pos.y()
+    #                 mx = pos.x()
+    #                 my = pos.y()
+    #
+    #                 w = abs(mx - fx)
+    #                 h = abs(my - fy)
+    #
+    #                 # 用当前选中的比例计算
+    #                 if w * h_ratio > h * w_ratio:
+    #                     h = int(w * h_ratio / w_ratio)
+    #                 else:
+    #                     w = int(h * w_ratio / h_ratio)
+    #
+    #                 w = max(w, 1)
+    #                 h = max(h, 1)
+    #
+    #                 if self.drag_mode == "br":
+    #                     self.select_rect = QRect(fx, fy, w, h)
+    #                 elif self.drag_mode == "tl":
+    #                     self.select_rect = QRect(fx - w, fy - h, w, h)
     #                 elif self.drag_mode == "tr":
-    #                     nr.setTopRight(pos)
+    #                     self.select_rect = QRect(fx, fy - h, w, h)
     #                 elif self.drag_mode == "bl":
-    #                     nr.setBottomLeft(pos)
-    #                 elif self.drag_mode == "br":
-    #                     nr.setBottomRight(pos)
-    #                 elif self.drag_mode == "l":
-    #                     nr.setLeft(pos.x())
+    #                     self.select_rect = QRect(fx - w, fy, w, h)
     #                 elif self.drag_mode == "r":
-    #                     nr.setRight(pos.x())
-    #                 elif self.drag_mode == "t":
-    #                     nr.setTop(pos.y())
+    #                     self.select_rect = QRect(fx, fy, w, h)
+    #                 elif self.drag_mode == "l":
+    #                     self.select_rect = QRect(fx - w, fy, w, h)
     #                 elif self.drag_mode == "b":
+    #                     self.select_rect = QRect(fx, fy, w, h)
+    #                 elif self.drag_mode == "t":
+    #                     self.select_rect = QRect(fx, fy - h, w, h)
+    #
+    #                 self.update()
+    #                 return
+    #
+    #             # 自由模式
+    #             if self.drag_mode and free_crop:
+    #                 m = self.drag_mode
+    #                 nr = QRect(r)
+    #                 if m == "tl":
+    #                     nr.setTopLeft(pos)
+    #                 elif m == "tr":
+    #                     nr.setTopRight(pos)
+    #                 elif m == "bl":
+    #                     nr.setBottomLeft(pos)
+    #                 elif m == "br":
+    #                     nr.setBottomRight(pos)
+    #                 elif m == "l":
+    #                     nr.setLeft(pos.x())
+    #                 elif m == "r":
+    #                     nr.setRight(pos.x())
+    #                 elif m == "t":
+    #                     nr.setTop(pos.y())
+    #                 elif m == "b":
     #                     nr.setBottom(pos.y())
     #                 self.select_rect = nr
-    #             else:
-    #                 self.select_rect.setBottomRight(pos)
+    #                 self.update()
+    #                 return
+    #
+    #             # ==========================
+    #             # 新建框：当前比例
+    #             # ==========================
+    #             sx = self.select_rect.left()
+    #             sy = self.select_rect.top()
+    #             px = pos.x()
+    #             py = pos.y()
+    #             dx = px - sx
+    #             dy = py - sy
+    #
+    #             if not free_crop:
+    #                 adx = abs(dx)
+    #                 ady = abs(dy)
+    #                 if adx * h_ratio > ady * w_ratio:
+    #                     dy = (dx / adx) * adx * h_ratio / w_ratio
+    #                 else:
+    #                     dx = (dy / ady) * ady * w_ratio / h_ratio
+    #
+    #             x2 = int(sx + dx)
+    #             y2 = int(sy + dy)
+    #             self.select_rect.setBottomRight(QPoint(x2, y2))
     #             self.update()
     #         return
     #
-    #     # 普通模式：图片平移
+    #     # 普通模式拖动
     #     if self.panning and event.buttons() & Qt.LeftButton:
     #         self.offset += pos - self.last_pos
     #         self.last_pos = pos
     #         self.update()
     #
-    #     # 原有逻辑：拖拽图片
     #     if event.buttons() & Qt.LeftButton and not self._fit_mode:
     #         pos = event.position()
     #         dx = pos.x() - self._drag_start_x
@@ -910,6 +1003,7 @@ class _FullscreenImageLabel(QLabel):
     #             self._emit_transform_sync()
     #
     #     super().mouseMoveEvent(event)
+
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
