@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QSlider, QComboBox, QMessageBox, QSizePolicy, QApplication,
     QStackedWidget, QMenu,QLineEdit
 )
-from PySide6.QtCore import Qt, Signal, Slot, QProcess,QTimer
+from PySide6.QtCore import Qt, Signal, Slot, QProcess,QTimer,QThread
 from PySide6.QtGui import QAction, QKeyEvent, QIcon, QFont
 
 from ui.styles import COLORS, GLOBAL_STYLE, FONTS
@@ -256,7 +256,6 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
     finder_action.triggered.connect(_reveal)
     menu.addAction(finder_action)
 
-    #old skywalker
     def _get_default_image_viewer_name():
         try:
             key = winreg.OpenKey(
@@ -392,6 +391,45 @@ def _move_to_trash(filepath: str) -> bool:
         print(f"⚠️ 移入回收站失败: {e}")
         return False
 
+# ==============================================
+# 后台复制线程（PySide6 专用，不卡UI）
+# ==============================================
+class CopyPhotoThread(QThread):
+    # 信号：成功数量、失败列表
+    finished_signal = Signal(int, list)
+
+    def __init__(self, selected_list, target_dir):
+        super().__init__()
+        self.selected_list = selected_list
+        self.target_dir = target_dir
+
+    def run(self):
+        success_count = 0
+        fail_files = []
+
+        for item in self.selected_list:
+            try:
+                img_path = item["current_path"]
+                if not os.path.isfile(img_path):
+                    continue
+
+                # 匹配 文件名.* （支持同时复制jpg、raw、xml等）
+                base = os.path.splitext(img_path)[0]
+                file_list = glob.glob(base + ".*")
+
+                # 高速复制
+                for f in file_list:
+                    target_path = os.path.join(self.target_dir, os.path.basename(f))
+                    shutil.copy2(f, target_path)  # 最快最稳的系统级复制
+
+                success_count += 1
+
+            except Exception as e:
+                fname = item.get("filename", "未知文件")
+                fail_files.append(f"{fname} -> {str(e)}")
+
+        # 发送结果给UI
+        self.finished_signal.emit(success_count, fail_files)
 
 class ResultsBrowserWindow(QMainWindow):
     """
@@ -414,6 +452,9 @@ class ResultsBrowserWindow(QMainWindow):
         self._is_merged: bool = False
         self._sub_dirs: list = []
         self._fullscreen_nav_photos: list = []
+
+        self._exif_queue = []
+        self._exif_writing = False
 
         self._setup_window()
         self._setup_menu()
@@ -643,59 +684,38 @@ class ResultsBrowserWindow(QMainWindow):
         return bar
 
     def _copy_selected_photos(self):
-
-        # 1. 获取多选的照片数据
+        # 1. 获取选中照片
         selected_list = self._thumb_grid.get_multi_selected_photos()
-
         if not selected_list:
             QMessageBox.warning(self, "提示", "请先用Ctrl+鼠标左键选择需要导出的图片！")
             return
 
-        # 第一次打开用空路径，之后用上次记住的
+        files = len(selected_list)
+
+        # 2. 选择目标目录
         last_dir = getattr(self, "_last_target_dir", "")
-
-        # 如果为空打开对话框（默认从上次目录开始）
-        # if not last_dir:
         target_dir = QFileDialog.getExistingDirectory(
-            self,
-            "请选择要导出的目标文件夹",
-            last_dir  # 这里传入上次路径
+            self, "请选择导出目标文件夹", last_dir
         )
-
-        # 如果用户选择了路径，保存起来，下次用
-        if target_dir:
-            self._last_target_dir = target_dir
-            # self._dir_babel_setTruncatedText()
-        else:
+        if not target_dir:
             return
-        # else:
-        #     target_dir = last_dir
+        self._last_target_dir = target_dir
 
-        success_count = 0
-        fail_files = []
+        # 3. 启动后台线程（UI不阻塞）
+        self.copy_thread = CopyPhotoThread(selected_list, target_dir)
+        self.copy_thread.finished_signal.connect(self._on_copy_finished)
+        self.copy_thread.start()
 
-        # 3. 遍历每个选中项，取出路径并移动
-        for item in selected_list:
-            try:
-                # 从字典里拿真实路径
-                img_path = item["current_path"]
-                if os.path.exists(img_path):
-                    img_path = img_path[:-4] + ".*"
-                    # 复制通配符文件
-                    subprocess.Popen(f'copy "{img_path}" "{target_dir}\\"', shell=True,
-                                     creationflags=subprocess.CREATE_NO_WINDOW)
-                    success_count += 1
-            except Exception as e:
-                # 出错时安全记录
-                fname = item.get("filename", "未知文件")
-                fail_files.append(f"{fname} -> {str(e)}")
+        # 立即提示
+        self.window()._briefly_display_status(f"后台正在导出{files}张图片，请稍后...")
 
-        # 4. 结果提示
-        msg = f"执行导出：{success_count} 张，请稍后查看"
+    # ==============================================
+    # 复制完成回调（更新UI）
+    # ==============================================
+    def _on_copy_finished(self, success_count, fail_files):
+        msg = f"导出成功：{success_count} 张"
         if fail_files:
             msg += f"\n失败：{len(fail_files)} 张"
-
-        #QMessageBox.information(self, "完成", msg)
         self.window()._briefly_display_status(msg)
 
     def _dir_babel_setTruncatedText(self):
@@ -727,21 +747,6 @@ class ResultsBrowserWindow(QMainWindow):
         else:
             return
 
-    # Added end
-
-    # def _setup_statusbar(self):
-    #     self._status_bar = QStatusBar()
-    #     self._status_bar.setStyleSheet(f"""
-    #         QStatusBar {{
-    #             background-color: {COLORS['bg_elevated']};
-    #             color: {COLORS['text_secondary']};
-    #             font-size: 11px;
-    #             border-top: 1px solid {COLORS['border_subtle']};
-    #         }}
-    #     """)
-    #     self.setStatusBar(self._status_bar)
-    #     self._status_bar.showMessage("—",0)
-
     def _setup_statusbar(self):
         # ========== 这些全部保留 ==========
         self._status_bar = QStatusBar()
@@ -760,7 +765,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._status_bar.addWidget(self._status_label, 1)
 
 
-        # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
     #  公共接口
     # ------------------------------------------------------------------
 
@@ -1096,92 +1101,6 @@ class ResultsBrowserWindow(QMainWindow):
         else:
             self._detail_panel.clear()
 
-    # def _update_display_list(self):
-    #     """Flattens the filtered photos list considering the expanded state of burst groups."""
-    #     # Group by burst_id to find the "best" representative photo for each group
-    #     burst_map = {}
-    #     for p in self._raw_filtered_photos:
-    #         bid = p.get("burst_id")
-    #         if bid is not None:
-    #             if bid not in burst_map:
-    #                 burst_map[bid] = []
-    #             burst_map[bid].append(p)
-    #     burst_map = {bid: photos for bid, photos in burst_map.items() if len(photos) > 1}
-    #
-    #     best_burst_photos = {}
-    #     for bid, photos in burst_map.items():
-    #         best_photo = max(photos, key=lambda x: (x.get("rating", 0), x.get("composite_score", 0.0)))
-    #         best_burst_photos[bid] = _photo_identity(best_photo)
-    #
-    #     grouped_photos = []
-    #     processed_bursts = set()
-    #
-    #     for p in self._raw_filtered_photos:
-    #         bid = p.get("burst_id")
-    #
-    #         if bid is None or bid not in burst_map:
-    #             # Normal photo
-    #             grouped_photos.append(dict(p))
-    #         else:
-    #             # It's part of a burst
-    #             if bid in processed_bursts:
-    #                 continue # Already handled this burst
-    #
-    #             processed_bursts.add(bid)
-    #             burst_photos = burst_map[bid]
-    #
-    #             burst_photos = sorted(burst_photos, key=_burst_sort_key)
-    #
-    #             if bid in self._expanded_bursts:
-    #                 # Expanded: add all photos in chronological order
-    #                 for i, bp in enumerate(burst_photos, 1):
-    #                     expanded_photo = dict(bp)
-    #                     expanded_photo["is_expanded_burst_member"] = True
-    #                     expanded_photo["burst_position_index"] = i
-    #                     expanded_photo["burst_total_count"] = len(burst_photos)
-    #                     expanded_photo["burst_id"] = bid
-    #                     grouped_photos.append(expanded_photo)
-    #             else:
-    #                 # Collapsed: add only the representative photo
-    #                 best_identity = best_burst_photos[bid]
-    #                 best_p = next(x for x in burst_photos if _photo_identity(x) == best_identity)
-    #
-    #                 group_photo = dict(best_p)
-    #                 group_photo["is_burst_group"] = True
-    #                 group_photo["burst_count"] = len(burst_photos)
-    #                 group_photo["burst_photos"] = burst_photos
-    #                 group_photo["burst_id"] = bid
-    #                 grouped_photos.append(group_photo)
-    #
-    #     # Do NOT sort grouped_photos here. We want them in the exact order they appeared in _raw_filtered_photos,
-    #     # which preserves the sorting (rating, time, etc.) applied by the database!
-    #     # When a burst group is encountered, it is placed at the position of its first appearing member.
-    #
-    #     self._filtered_photos = grouped_photos
-    #
-    #     # Save selection state to try and restore it
-    #     current_selection = self._thumb_grid._selected_key
-    #
-    #     self._thumb_grid.load_photos(self._filtered_photos, keep_scroll=True)
-    #     self._fullscreen.set_photo_list(self._filtered_photos)
-    #     self._fullscreen_nav_photos = list(self._filtered_photos)
-    #
-    #     if self._filtered_photos:
-    #         target_identity = current_selection if current_selection else _photo_identity(self._filtered_photos[0])
-    #         if not any(_photo_identity(p) == target_identity for p in self._filtered_photos):
-    #             target_identity = _photo_identity(self._filtered_photos[0])
-    #
-    #         selected_photo = next(p for p in self._filtered_photos if _photo_identity(p) == target_identity)
-    #         self._thumb_grid.select_photo(selected_photo)
-    #         self._detail_panel.show_photo(selected_photo)
-    #     else:
-    #         self._detail_panel.clear()
-    #     #old skywalker
-    #     self._select_count_label.setText("")
-    #     self._select_count_label.hide()
-    #     self._compare_btn.hide()
-    #     #end
-
     @Slot(int)
     def _toggle_burst(self, burst_id: int):
         if len([p for p in self._raw_filtered_photos if p.get("burst_id") == burst_id]) <= 1:
@@ -1416,16 +1335,65 @@ class ResultsBrowserWindow(QMainWindow):
                 p["rating"] = new_rating
                 break
         self._thumb_grid.refresh_photo(current_photo or filename, new_rating)
-        # 异步写 EXIF（遵守 metadata_write_mode 设置，mode=none 时内部自动跳过）
+
+        # 异步写 EXIF（修复版：排队执行，不并发、不阻塞、不超时）
         file_path = self._get_photo_file_path(current_photo or filename)
         if file_path:
-            import threading
-            from tools.exiftool_manager import get_exiftool_manager
-            threading.Thread(
-                target=get_exiftool_manager().set_rating_and_pick,
-                args=(file_path, new_rating),
-                daemon=True,
-            ).start()
+            self._safe_write_exif(file_path, new_rating)
+
+        # # 异步写 EXIF（遵守 metadata_write_mode 设置，mode=none 时内部自动跳过）
+        # file_path = self._get_photo_file_path(current_photo or filename)
+        # if file_path:
+        #     import threading
+        #     from tools.exiftool_manager import get_exiftool_manager
+        #     threading.Thread(
+        #         target=get_exiftool_manager().set_rating_and_pick,
+        #         args=(file_path, new_rating),
+        #         daemon=True,
+        #     ).start()
+
+    # ================================
+    # 【把这个函数粘贴到同类里】
+    # ================================
+    def _safe_write_exif(self, file_path, new_rating):
+        """
+        EXIF 写入排队机制
+        无论多快点击，都只串行执行，彻底解决 ExifTool 超时/卡死
+        """
+        # 初始化队列（第一次使用时自动创建）
+        if not hasattr(self, "_exif_queue"):
+            self._exif_queue = []
+        if not hasattr(self, "_exif_writing"):
+            self._exif_writing = False
+
+        from tools.exiftool_manager import get_exiftool_manager
+
+        # 把任务加入队列
+        self._exif_queue.append((file_path, new_rating))
+
+        # 如果正在写入，直接返回，自动排队
+        if self._exif_writing:
+            return
+
+        # 单线程 worker 处理所有 EXIF 写入
+        def worker():
+            while self._exif_queue:
+                self._exif_writing = True
+                path, rating = self._exif_queue.pop(0)
+                try:
+                    # 调用 ExifTool（同一时间只执行一个）
+                    get_exiftool_manager().set_rating_and_pick(path, rating)
+                except Exception:
+                    # 出错不崩溃，继续写下一个
+                    continue
+
+            # 全部写完，释放状态
+            self._exif_writing = False
+
+        # 启动唯一后台线程
+        import threading
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
 
     def _get_photo_file_path(self, photo_or_filename) -> "str | None":
         """根据 photo 或 filename 查找照片绝对路径。"""
@@ -1552,6 +1520,17 @@ class ResultsBrowserWindow(QMainWindow):
         key = event.key()
         in_fullscreen = (self._stack.currentIndex() == 1)
 
+        #数字1-5，评星快捷键
+        if Qt.Key_0 <= key <= Qt.Key_5:
+            num = key - Qt.Key_0
+            self._detail_panel._set_rating(num)
+            return
+
+        #CTRL+A，缩略图全选
+        if key == Qt.Key_A and event.modifiers() == Qt.ControlModifier:
+            self._thumb_grid._on_select_all()
+            return
+
         if key in (Qt.Key_Left, Qt.Key_Up):
             if in_fullscreen:
                 self._fullscreen_prev()
@@ -1628,7 +1607,7 @@ class ResultsBrowserWindow(QMainWindow):
             self._status_label.setText(old_text)
             self._status_label.setStyleSheet(old_style)
 
-        QTimer.singleShot(msec, restore)
+        #QTimer.singleShot(msec, restore)
 
     def _show_no_db_hint(self, directory: str):
         QMessageBox.information(
@@ -1670,745 +1649,3 @@ class ResultsBrowserWindow(QMainWindow):
             except Exception:
                 pass
             self._db = None
-
-
-# ============================================================
-#  ResultsBrowserWidget — 嵌入式浏览器（供主窗口 QStackedWidget 使用）
-# ============================================================
-
-# class ResultsBrowserWidget(QWidget):
-#     """
-#     与 ResultsBrowserWindow 相同的三栏布局，但以 QWidget 形式嵌入主窗口 QStackedWidget。
-#     信号 back_requested 在用户点击「返回」时发出。
-#     """
-#     back_requested = Signal()
-#
-#     def __init__(self, parent=None):
-#         super().__init__(parent)
-#         self.i18n = get_i18n()
-#         self._db: Optional[ReportDB] = None
-#         self._directory: str = ""
-#         self._all_photos: list = []
-#         self._filtered_photos: list = []
-#         self._raw_filtered_photos: list = [] # V5: Store unfiltered sorted photos
-#         self._expanded_bursts: set = set()   # V5: Track expanded burst IDs
-#         self._is_merged: bool = False
-#         self._sub_dirs: list = []
-#
-#         self.setStyleSheet(GLOBAL_STYLE)
-#         self.setFocusPolicy(Qt.StrongFocus)
-#         self._setup_ui()
-#
-#     # ------------------------------------------------------------------
-#     #  UI 构建
-#     # ------------------------------------------------------------------
-#
-#     def _setup_ui(self):
-#         main_v = QVBoxLayout(self)
-#         main_v.setContentsMargins(0, 0, 0, 0)
-#         main_v.setSpacing(0)
-#
-#         self._toolbar = self._build_toolbar()
-#         main_v.addWidget(self._toolbar)
-#
-#         outer_h = QHBoxLayout()
-#         outer_h.setContentsMargins(0, 0, 0, 0)
-#         outer_h.setSpacing(0)
-#         main_v.addLayout(outer_h, 1)
-#
-#         self._stack = QStackedWidget()
-#         outer_h.addWidget(self._stack, 1)
-#
-#         # Page 0: 过滤面板 + 缩略图网格
-#         two_col = QWidget()
-#         main_h = QHBoxLayout(two_col)
-#         main_h.setContentsMargins(0, 0, 0, 0)
-#         main_h.setSpacing(0)
-#
-#         self._filter_panel = FilterPanel(self.i18n, self)
-#         self._filter_panel.filters_changed.connect(self._apply_filters)
-#         main_h.addWidget(self._filter_panel)
-#
-#         center_widget = QWidget()
-#         center_widget.setStyleSheet(f"background-color: {COLORS['bg_primary']};")
-#         center_layout = QVBoxLayout(center_widget)
-#         center_layout.setContentsMargins(0, 0, 0, 0)
-#         center_layout.setSpacing(0)
-#
-#         self._thumb_grid = ThumbnailGrid(self.i18n, self)
-#         self._thumb_grid.photo_selected.connect(self._on_photo_selected)
-#         self._thumb_grid.photo_double_clicked.connect(self._enter_fullscreen)
-#         self._thumb_grid.multi_selection_changed.connect(self._on_multi_selection_changed)
-#         self._thumb_grid.burst_badge_clicked.connect(self._toggle_burst)
-#         center_layout.addWidget(self._thumb_grid, 1)
-#
-#         main_h.addWidget(center_widget, 1)
-#         self._stack.addWidget(two_col)
-#
-#         # Page 1: 全屏查看器
-#         self._fullscreen = FullscreenViewer(self.i18n, self)
-#         self._fullscreen.close_requested.connect(self._exit_fullscreen)
-#         self._fullscreen.prev_requested.connect(self._fullscreen_prev)
-#         self._fullscreen.next_requested.connect(self._fullscreen_next)
-#         self._fullscreen.delete_requested.connect(self._on_delete_photo)
-#         self._fullscreen.context_menu_requested.connect(self._on_fullscreen_context_menu)
-#         self._stack.addWidget(self._fullscreen)
-#
-#         # Page 2: 对比查看器（C5）
-#         self._comparison = ComparisonViewer(self.i18n, self)
-#         self._comparison.close_requested.connect(self._exit_comparison)
-#         self._comparison.rating_changed.connect(self._on_rating_changed)
-#         self._stack.addWidget(self._comparison)
-#
-#         # 右侧详情面板
-#         self._detail_panel = DetailPanel(self.i18n, self)
-#         self._detail_panel.prev_requested.connect(self._prev_photo)
-#         self._detail_panel.next_requested.connect(self._next_photo)
-#         self._detail_panel.rating_change_requested.connect(self._on_rating_changed)
-#         outer_h.addWidget(self._detail_panel, 0)
-#
-#         # 底部状态栏（简单 label）
-#         self._status_label = QLabel("—")
-#         self._status_label.setFixedHeight(24)
-#         self._status_label.setStyleSheet(f"""
-#             QLabel {{
-#                 background-color: {COLORS['bg_elevated']};
-#                 color: {COLORS['text_secondary']};
-#                 font-size: 11px;
-#                 border-top: 1px solid {COLORS['border_subtle']};
-#                 padding: 4px 16px;
-#             }}
-#         """)
-#         main_v.addWidget(self._status_label)
-#
-#     def _build_toolbar(self) -> QWidget:
-#         bar = QWidget()
-#         bar.setObjectName("toolbar")
-#         bar.setFixedHeight(52)
-#         bar.setStyleSheet(f"""
-#             QWidget#toolbar {{
-#                 background-color: {COLORS['bg_elevated']};
-#                 border-bottom: 1px solid {COLORS['border_subtle']};
-#             }}
-#         """)
-#         layout = QHBoxLayout(bar)
-#         layout.setContentsMargins(16, 8, 16, 8)
-#         layout.setSpacing(12)
-#
-#         back_btn = QPushButton(self.i18n.t("browser.back"))
-#         back_btn.setObjectName("tertiary")
-#         back_btn.setFixedHeight(32)
-#         back_btn.setToolTip(self.i18n.t("browser.back_tooltip"))
-#         back_btn.clicked.connect(self.back_requested)
-#         layout.addWidget(back_btn)
-#
-#         layout.addSpacing(8)
-#
-#         # Directory switcher combo box (hidden by default, shown for batch dirs)
-#         self._dir_combo = QComboBox()
-#         self._dir_combo.setFixedHeight(32)
-#         self._dir_combo.setMinimumWidth(200)
-#         self._dir_combo.setMaximumWidth(400)
-#         self._dir_combo.setStyleSheet(f"""
-#             QComboBox {{
-#                 color: {COLORS['text_secondary']};
-#                 background: {COLORS['bg_primary']};
-#                 border: 1px solid {COLORS['border_subtle']};
-#                 border-radius: 4px;
-#                 padding: 4px 8px;
-#                 font-size: 12px;
-#                 font-family: {FONTS['mono']};
-#             }}
-#             QComboBox::drop-down {{ border: none; width: 20px; }}
-#         """)
-#         self._dir_combo.currentIndexChanged.connect(self._on_subdir_changed)
-#         self._dir_combo.hide()
-#         layout.addWidget(self._dir_combo)
-#
-#         self._dir_label = QLabel(self.i18n.t("browser.open_dir"))
-#         self._dir_label.setStyleSheet(f"""
-#             QLabel {{
-#                 color: {COLORS['text_secondary']};
-#                 font-size: 12px;
-#                 font-family: {FONTS['mono']};
-#                 background: transparent;
-#             }}
-#         """)
-#         self._dir_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-#         layout.addWidget(self._dir_label)
-#
-#         layout.addSpacing(16)
-#
-#         # 多选计数标签（C3，默认隐藏）
-#         self._select_count_label = QLabel("")
-#         self._select_count_label.setStyleSheet(f"""
-#             QLabel {{
-#                 color: {COLORS['accent']};
-#                 font-size: 12px;
-#                 background: transparent;
-#             }}
-#         """)
-#         self._select_count_label.hide()
-#         layout.addWidget(self._select_count_label)
-#
-#         # 对比按钮（C5，默认隐藏，多选2张时显示）
-#         self._compare_btn = QPushButton(self.i18n.t("browser.compare_btn"))
-#         self._compare_btn.setObjectName("secondary")
-#         self._compare_btn.setFixedHeight(32)
-#         self._compare_btn.hide()
-#         self._compare_btn.clicked.connect(self._enter_comparison)
-#         layout.addWidget(self._compare_btn)
-#
-#         size_label = QLabel(self.i18n.t("browser.size_label"))
-#         size_label.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px; background: transparent;")
-#         layout.addWidget(size_label)
-#
-#         self._size_slider = QSlider(Qt.Horizontal)
-#         self._size_slider.setRange(80, 300)
-#         self._size_slider.setValue(160)
-#         self._size_slider.setFixedWidth(100)
-#         self._size_slider.valueChanged.connect(self._on_size_changed)
-#         layout.addWidget(self._size_slider)
-#
-#         return bar
-#
-#     # ------------------------------------------------------------------
-#     #  公共接口
-#     # ------------------------------------------------------------------
-#
-#     def open_directory(self, directory: str):
-#         """Load report.db from directory. Supports batch multi-dir mode."""
-#         if not directory:
-#             return
-#
-#         if self._db:
-#             try:
-#                 self._db.close()
-#             except Exception:
-#                 pass
-#             self._db = None
-#
-#         self._is_merged = False
-#         self._sub_dirs = []
-#
-#         from tools.merged_report_db import find_processed_subdirs
-#         processed = find_processed_subdirs(directory)
-#
-#         self._dir_combo.blockSignals(True)
-#         self._dir_combo.clear()
-#
-#         if len(processed) > 1:
-#             self._sub_dirs = processed
-#             total = sum(self._count_db_photos(d) for d in processed)
-#             self._dir_combo.addItem(f"\U0001f4c2 All ({total})", "__ALL__")
-#             for d in processed:
-#                 rel = os.path.relpath(d, directory)
-#                 n = self._count_db_photos(d)
-#                 label = f"  ./ ({n})" if rel == '.' else f"  {rel}/ ({n})"
-#                 self._dir_combo.addItem(label, d)
-#             #self._dir_combo.show()
-#             #self._dir_label.hide()
-#         else:
-#             self._dir_combo.hide()
-#             self._dir_label.show()
-#             if not processed:
-#                 db_path = os.path.join(directory, ".superpicky", "report.db")
-#                 if not os.path.exists(db_path):
-#                     QMessageBox.information(
-#                         self,
-#                         self.i18n.t("browser.no_db"),
-#                         f"{directory}\n\n{self.i18n.t('browser.no_db_hint')}"
-#                     )
-#                     self._dir_combo.blockSignals(False)
-#                     return
-#
-#         self._dir_combo.blockSignals(False)
-#         self._directory = directory
-#
-#         if len(processed) > 1:
-#             self._load_merged(directory, processed)
-#         elif len(processed) == 1:
-#             self._load_single(processed[0])
-#         else:
-#             self._load_single(directory)
-#
-#     def _count_db_photos(self, directory: str) -> int:
-#         db_path = os.path.join(directory, ".superpicky", "report.db")
-#         if not os.path.exists(db_path):
-#             return 0
-#         try:
-#             import sqlite3 as _sql
-#             conn = _sql.connect(db_path)
-#             n = conn.execute("SELECT COUNT(*) FROM photos WHERE rating != -1").fetchone()[0]
-#             conn.close()
-#             return n
-#         except Exception:
-#             return 0
-#
-#     def _load_single(self, directory: str):
-#         self._is_merged = False
-#         try:
-#             self._db = ReportDB(directory)
-#         except Exception as e:
-#             QMessageBox.warning(self, "Error", str(e))
-#             return
-#         self._directory = directory
-#         short_name = os.path.basename(directory) or directory
-#         self._dir_label.setText(short_name)
-#         self._dir_label.setToolTip(directory)
-#         self._all_photos = self._db.get_all_photos()
-#         self._compute_burst_ids()
-#         self._filter_panel.reset_all()
-#         species = self._db.get_distinct_species(use_en=self.i18n.current_lang.startswith('en'))
-#         self._filter_panel.update_species_list(species)
-#         if len(self._all_photos) > 0 and len(self._filtered_photos) == 0:
-#             self._filter_panel.select_all_ratings()
-#
-#     def _load_merged(self, root_dir: str, sub_dirs: list):
-#         from tools.merged_report_db import MergedReportDB
-#         self._is_merged = True
-#         try:
-#             self._db = MergedReportDB(root_dir, sub_dirs)
-#         except Exception as e:
-#             QMessageBox.warning(self, "Error", str(e))
-#             return
-#         self._directory = root_dir
-#         self._all_photos = self._db.get_all_photos()
-#         self._compute_burst_ids()
-#         self._filter_panel.reset_all()
-#         species = self._db.get_distinct_species(use_en=self.i18n.current_lang.startswith('en'))
-#         self._filter_panel.update_species_list(species)
-#         if len(self._all_photos) > 0 and len(self._filtered_photos) == 0:
-#             self._filter_panel.select_all_ratings()
-#
-#     def _on_subdir_changed(self, index: int):
-#         if index < 0:
-#             return
-#         value = self._dir_combo.itemData(index)
-#         if value == "__ALL__":
-#             self._load_merged(self._directory, self._sub_dirs)
-#         else:
-#             self._load_single(value)
-#
-#     def _compute_burst_ids(self):
-#         """基于拍摄时间做 burst 分组，时间差 <= 1 秒视为同一组。"""
-#         if not self._db:
-#             return
-#
-#         photos = self._db.get_all_photos()
-#         self._db.clear_burst_ids()
-#         burst_map = _build_burst_update_map(photos)
-#         if burst_map:
-#             self._db.update_burst_ids(burst_map)
-#             self._all_photos = self._db.get_all_photos()
-#         else:
-#             self._all_photos = photos
-#
-#         if not self._all_photos:
-#             self._burst_totals = Counter()
-#             return
-#
-#         self._burst_totals = _burst_totals_from_photos(self._all_photos)
-#
-#     def cleanup(self):
-#         """释放 DB 连接（切换回处理页前调用）。"""
-#         try:
-#             self._thumb_grid.cleanup()
-#         except Exception:
-#             pass
-#         try:
-#             self._fullscreen.cleanup()
-#         except Exception:
-#             pass
-#         try:
-#             self._comparison.cleanup()
-#         except Exception:
-#             pass
-#         try:
-#             self._detail_panel.cleanup()
-#         except Exception:
-#             pass
-#         if self._db:
-#             try:
-#                 self._db.close()
-#             except Exception:
-#                 pass
-#             self._db = None
-#
-#     # ------------------------------------------------------------------
-#     #  私有槽
-#     # ------------------------------------------------------------------
-#
-#     def _resolve_photo_paths(self, photo: dict) -> dict:
-#         _PATH_KEYS = ('original_path', 'current_path', 'temp_jpeg_path',
-#                       'debug_crop_path', 'yolo_debug_path')
-#         resolved = dict(photo)
-#         if self._is_merged and 'source_dir' in photo:
-#             base_dir = os.path.join(self._directory, photo['source_dir'])
-#         else:
-#             base_dir = self._directory
-#         resolved['_base_dir'] = base_dir
-#         for key in _PATH_KEYS:
-#             val = photo.get(key)
-#             if val and not os.path.isabs(val):
-#                 resolved[key] = os.path.join(base_dir, val)
-#         bid = resolved.get("burst_id")
-#         if bid is not None and hasattr(self, '_burst_totals'):
-#             resolved["burst_total"] = self._burst_totals.get(bid, 1)
-#         return resolved
-#
-#     @Slot(dict)
-#     def _apply_filters(self, filters: dict):
-#         if not self._db:
-#             self._thumb_grid.load_photos([])
-#             self._update_status(0, 0)
-#             return
-#
-#         # 动态刷新鸟种下拉：只显示当前星级筛选下有照片的鸟种
-#         use_en = self.i18n.current_lang.startswith('en')
-#         species = self._db.get_distinct_species(use_en=use_en, ratings=filters.get('ratings'))
-#         self._filter_panel.update_species_list(species)
-#
-#         raw_photos = self._db.get_photos_by_filters(filters)
-#         self._raw_filtered_photos = [self._resolve_photo_paths(p) for p in raw_photos]
-#         total = len(self._all_photos)
-#         filtered = len(self._raw_filtered_photos)
-#         self._update_status(total, filtered)
-#         self._filter_panel.update_count(filtered)
-#         self._update_display_list()
-#
-#     def _update_display_list(self):
-#         burst_map = {}
-#         for photo in self._raw_filtered_photos:
-#             burst_id = photo.get("burst_id")
-#             if burst_id is None:
-#                 continue
-#             burst_map.setdefault(burst_id, []).append(photo)
-#         burst_map = {burst_id: photos for burst_id, photos in burst_map.items() if len(photos) > 1}
-#
-#         best_burst_photos = {}
-#         for burst_id, photos in burst_map.items():
-#             best_photo = max(photos, key=lambda x: (x.get("rating", 0), x.get("composite_score", 0.0)))
-#             best_burst_photos[burst_id] = _photo_identity(best_photo)
-#
-#         grouped_photos = []
-#         processed_bursts = set()
-#         for photo in self._raw_filtered_photos:
-#             burst_id = photo.get("burst_id")
-#             if burst_id is None or burst_id not in burst_map:
-#                 grouped_photos.append(dict(photo))
-#                 continue
-#             if burst_id in processed_bursts:
-#                 continue
-#
-#             processed_bursts.add(burst_id)
-#             burst_photos = sorted(burst_map[burst_id], key=_burst_sort_key)
-#             if burst_id in self._expanded_bursts:
-#                 for pos, burst_photo in enumerate(burst_photos, 1):
-#                     expanded_photo = dict(burst_photo)
-#                     expanded_photo["is_expanded_burst_member"] = True
-#                     expanded_photo["burst_position_index"] = pos
-#                     expanded_photo["burst_total_count"] = len(burst_photos)
-#                     grouped_photos.append(expanded_photo)
-#             else:
-#                 best_identity = best_burst_photos[burst_id]
-#                 best_photo = next(x for x in burst_photos if _photo_identity(x) == best_identity)
-#                 group_photo = dict(best_photo)
-#                 group_photo["is_burst_group"] = True
-#                 group_photo["burst_count"] = len(burst_photos)
-#                 group_photo["burst_photos"] = burst_photos
-#                 grouped_photos.append(group_photo)
-#
-#         self._filtered_photos = grouped_photos
-#         current_selection = self._thumb_grid._selected_key
-#         self._thumb_grid.load_photos(self._filtered_photos, keep_scroll=True)
-#         self._fullscreen.set_photo_list(self._filtered_photos)
-#
-#         if self._filtered_photos:
-#             target_identity = current_selection or _photo_identity(self._filtered_photos[0])
-#             if not any(_photo_identity(p) == target_identity for p in self._filtered_photos):
-#                 target_identity = _photo_identity(self._filtered_photos[0])
-#             selected_photo = next(p for p in self._filtered_photos if _photo_identity(p) == target_identity)
-#             self._thumb_grid.select_photo(selected_photo)
-#             self._detail_panel.show_photo(selected_photo)
-#         else:
-#             self._detail_panel.clear()
-#
-#     @Slot(int)
-#     def _toggle_burst(self, burst_id: int):
-#         if len([p for p in self._raw_filtered_photos if p.get("burst_id") == burst_id]) <= 1:
-#             self._expanded_bursts.discard(burst_id)
-#             return
-#         if burst_id in self._expanded_bursts:
-#             self._expanded_bursts.remove(burst_id)
-#         else:
-#             self._expanded_bursts.add(burst_id)
-#         self._update_display_list()
-#
-#     @Slot(dict)
-#     def _on_photo_selected(self, photo: dict):
-#         self._detail_panel.show_photo(photo)
-#
-#     @Slot()
-#     def _prev_photo(self):
-#         photo = self._thumb_grid.select_prev()
-#         if photo:
-#             self._detail_panel.show_photo(photo)
-#             if self._stack.currentIndex() == 1:   # 全屏模式同步大图
-#                 self._fullscreen.show_photo(photo)
-#
-#     @Slot()
-#     def _next_photo(self):
-#         photo = self._thumb_grid.select_next()
-#         if photo:
-#             self._detail_panel.show_photo(photo)
-#             if self._stack.currentIndex() == 1:   # 全屏模式同步大图
-#                 self._fullscreen.show_photo(photo)
-#
-#     @Slot(dict)
-#     def _enter_fullscreen(self, photo: dict):
-#         if photo.get("is_expanded_burst_member"):
-#             self._open_burst_sequence(photo)
-#             return
-#
-#         self._show_fullscreen_photo(photo)
-#         self._detail_panel._switch_view(True)
-#         self._toolbar.hide()
-#         self._stack.setCurrentIndex(1)
-#         self._fullscreen.setFocus()
-#
-#     @Slot()
-#     def _exit_fullscreen(self):
-#         self._toolbar.show()
-#         self._stack.setCurrentIndex(0)
-#         self._fullscreen_nav_photos = list(self._filtered_photos)
-#         self._detail_panel._switch_view(False)
-#         self.setFocus()
-#
-#     @Slot()
-#     def _fullscreen_prev(self):
-#         if not self._fullscreen_nav_photos:
-#             return
-#         current_key = _photo_identity(getattr(self._fullscreen, "_current_photo", {}) or {})
-#         nav_keys = [_photo_identity(p) for p in self._fullscreen_nav_photos]
-#         try:
-#             idx = nav_keys.index(current_key)
-#         except ValueError:
-#             idx = -1
-#         new_idx = idx - 1
-#         if 0 <= new_idx < len(self._fullscreen_nav_photos):
-#             self._show_fullscreen_photo(self._fullscreen_nav_photos[new_idx], nav_photos=self._fullscreen_nav_photos)
-#
-#     @Slot()
-#     def _fullscreen_next(self):
-#         if not self._fullscreen_nav_photos:
-#             return
-#         current_key = _photo_identity(getattr(self._fullscreen, "_current_photo", {}) or {})
-#         nav_keys = [_photo_identity(p) for p in self._fullscreen_nav_photos]
-#         try:
-#             idx = nav_keys.index(current_key)
-#         except ValueError:
-#             idx = -1
-#         new_idx = idx + 1
-#         if 0 <= new_idx < len(self._fullscreen_nav_photos):
-#             self._show_fullscreen_photo(self._fullscreen_nav_photos[new_idx], nav_photos=self._fullscreen_nav_photos)
-#
-#     @Slot(object, int)
-#     def _on_rating_changed(self, photo_or_filename, new_rating: int):
-#         """详情面板评分修改：写入 DB + 刷新缩略图角标 + 异步写 EXIF。"""
-#         current_photo = _coerce_photo(
-#             photo_or_filename,
-#             self._filtered_photos,
-#             getattr(self._detail_panel, "_current_photo", None),
-#         ) or {}
-#         filename = current_photo.get("filename") or (photo_or_filename if isinstance(photo_or_filename, str) else "")
-#         db_key = _photo_db_key(current_photo) if current_photo else filename
-#         if self._db:
-#             self._db.update_photo(db_key, {"rating": new_rating})
-#         for p in self._filtered_photos:
-#             if _photo_identity(p) == _photo_identity(current_photo) or (
-#                 not current_photo and p.get("filename") == filename
-#             ):
-#                 p["rating"] = new_rating
-#                 break
-#         self._thumb_grid.refresh_photo(current_photo or filename, new_rating)
-#         # 异步写 EXIF（遵守 metadata_write_mode 设置，mode=none 时内部自动跳过）
-#         file_path = self._get_photo_file_path(current_photo or filename)
-#         if file_path:
-#             import threading
-#             from tools.exiftool_manager import get_exiftool_manager
-#             threading.Thread(
-#                 target=get_exiftool_manager().set_rating_and_pick,
-#                 args=(file_path, new_rating),
-#                 daemon=True,
-#             ).start()
-#
-#     def _get_photo_file_path(self, photo_or_filename) -> "str | None":
-#         """根据 photo 或 filename 查找照片绝对路径。"""
-#         photo = _coerce_photo(photo_or_filename, self._filtered_photos)
-#         if photo:
-#             path = photo.get("current_path") or photo.get("original_path") or ""
-#             return path if path and os.path.exists(path) else None
-#         return None
-#
-#     @Slot(list)
-#     def _on_multi_selection_changed(self, photos: list):
-#         """C3：多选状态变化，更新工具栏显示。"""
-#         n = len(photos)
-#         if n > 1:
-#             self._select_count_label.setText(self.i18n.t("browser.selected_count").format(n=n))
-#             self._select_count_label.show()
-#         else:
-#             self._select_count_label.hide()
-#         # C5：仅当选中 2 张时显示对比按钮
-#         self._compare_btn.setVisible(n == 2)
-#
-#     def _show_context_menu(self, photo: dict, pos):
-#         """C4: context menu."""
-#         base_dir = photo.get('_base_dir', self._directory)
-#         _show_context_menu_impl(self, photo, pos, base_dir)
-#
-#     @Slot(dict)
-#     def _on_delete_photo(self, photo: dict):
-#         """全屏模式删除图片：确认 → 回收站 → DB 删除 → 缩略图同步 → 跳下一张。"""
-#         from advanced_config import get_advanced_config
-#         cfg = get_advanced_config()
-#         filename = photo.get("filename", "")
-#         if not filename:
-#             return
-#
-#         # 1. 确认弹窗
-#     @Slot(dict, object)
-#     def _on_fullscreen_context_menu(self, photo: dict, global_pos):
-#         """全屏大图右键菜单。"""
-#         _show_context_menu_impl(self, photo, global_pos, self._directory)
-#
-#         if cfg.delete_confirm:
-#             from PySide6.QtWidgets import QCheckBox
-#             msg_box = QMessageBox(self)
-#             msg_box.setWindowTitle(self.i18n.t("browser.delete_title"))
-#             msg_box.setText(self.i18n.t("browser.delete_msg").format(filename=filename))
-#             msg_box.setIcon(QMessageBox.Warning)
-#             yes_btn = msg_box.addButton(self.i18n.t("browser.delete_confirm_btn"), QMessageBox.AcceptRole)
-#             msg_box.addButton(self.i18n.t("browser.delete_cancel_btn"), QMessageBox.RejectRole)
-#             cb = QCheckBox(self.i18n.t("browser.delete_no_ask"))
-#             msg_box.setCheckBox(cb)
-#             msg_box.exec()
-#             if msg_box.clickedButton() != yes_btn:
-#                 return
-#             if cb.isChecked():
-#                 cfg.set_delete_confirm(False)
-#                 cfg.save()
-#
-#         # 2. 移入回收站
-#         filepath = photo.get("current_path") or photo.get("original_path") or ""
-#         if filepath and not _move_to_trash(filepath):
-#             QMessageBox.warning(
-#                 self,
-#                 self.i18n.t("browser.delete_failed"),
-#                 self.i18n.t("browser.delete_failed_msg").format(error=filepath)
-#             )
-#             return
-#
-#         # 3. DB 删除
-#         if self._db:
-#             self._db.delete_photo(_photo_db_key(photo))
-#
-#         # 4. 从内存列表移除
-#         target_identity = _photo_identity(photo)
-#         # 记录被删除照片在过滤列表中的位置，用于删除后正确跳转
-#         _del_identities = [_photo_identity(p) for p in self._filtered_photos]
-#         try:
-#             _deleted_idx = _del_identities.index(_photo_identity(photo))
-#         except ValueError:
-#             _deleted_idx = 0
-#         self._filtered_photos = [p for p in self._filtered_photos if _photo_identity(p) != target_identity]
-#         self._all_photos = [p for p in self._all_photos if _photo_identity(p) != target_identity]
-#
-#         # 5. 缩略图同步
-#         self._thumb_grid.remove_photo(photo)
-#         self._fullscreen.set_photo_list(self._filtered_photos)
-#
-#         # 6. 跳转逻辑：跳到被删除位置的下一张，已是末尾则跳上一张
-#         if self._filtered_photos:
-#             next_idx = min(_deleted_idx, len(self._filtered_photos) - 1)
-#             nxt = self._filtered_photos[next_idx]
-#             self._thumb_grid.select_photo(nxt)
-#             self._fullscreen.show_photo(nxt)
-#             self._detail_panel.show_photo(nxt)
-#         else:
-#             self._exit_fullscreen()
-#
-#         # 7. 更新状态栏
-#         self._update_status(len(self._all_photos), len(self._filtered_photos))
-#
-#     def _enter_comparison(self):
-#         """C5：进入 2-up 对比视图。"""
-#         photos = self._thumb_grid.get_multi_selected_photos()
-#         if len(photos) >= 2:
-#             self._comparison.show_pair(photos[0], photos[1])
-#             self._toolbar.hide()
-#             self._detail_panel.hide()   # 对比模式不显示详情面板
-#             self._stack.setCurrentIndex(2)
-#             self._comparison.setFocus()
-#
-#     def _exit_comparison(self):
-#         """C5：退出对比视图，回到 grid。"""
-#         self._toolbar.show()
-#         self._detail_panel.show()
-#         self._stack.setCurrentIndex(0)
-#         self.setFocus()
-#
-#     @Slot(int)
-#     def _on_size_changed(self, value: int):
-#         self._thumb_grid.set_thumb_size(value)
-#
-#     def _update_status(self, total: int, filtered: int):
-#         t = self.i18n.t("browser.total_photos").format(total=total)
-#         f = self.i18n.t("browser.filtered_photos").format(count=filtered)
-#         self._status_label.setText(f"{t}  |  {f}")
-#
-#     def keyPressEvent(self, event: QKeyEvent):
-#         key = event.key()
-#         in_fullscreen = (self._stack.currentIndex() == 1)
-#
-#         if key in (Qt.Key_Left, Qt.Key_Up):
-#             if in_fullscreen:
-#                 self._fullscreen_prev()
-#             else:
-#                 self._prev_photo()
-#         elif key in (Qt.Key_Right, Qt.Key_Down):
-#             if in_fullscreen:
-#                 self._fullscreen_next()
-#             else:
-#                 self._next_photo()
-#         elif key == Qt.Key_Tab:
-#             self._detail_panel.setVisible(not self._detail_panel.isVisible())
-#         elif key == Qt.Key_Plus or key == Qt.Key_Equal:
-#             self._size_slider.setValue(min(300, self._size_slider.value() + 20))
-#         elif key == Qt.Key_Minus:
-#             self._size_slider.setValue(max(80, self._size_slider.value() - 20))
-#         elif key == Qt.Key_Escape:
-#             current_page = self._stack.currentIndex()
-#             if current_page == 1:
-#                 self._exit_fullscreen()
-#             elif current_page == 2:
-#                 self._exit_comparison()
-#             else:
-#                 # grid 模式：有多选时先清选，否则返回主界面
-#                 if self._thumb_grid.get_multi_selected_photos():
-#                     self._thumb_grid.clear_multi_select()
-#                 else:
-#                     self.back_requested.emit()
-#         elif key == Qt.Key_C:
-#             if not in_fullscreen and self._stack.currentIndex() == 0:
-#                 photos = self._thumb_grid.get_multi_selected_photos()
-#                 if len(photos) >= 2:
-#                     self._enter_comparison()
-#         elif key == Qt.Key_F:
-#             if in_fullscreen:
-#                 self._fullscreen.toggle_focus()
-#             else:
-#                 self._detail_panel._switch_view(not self._detail_panel._use_crop_view)
-#         else:
-#             super().keyPressEvent(event)

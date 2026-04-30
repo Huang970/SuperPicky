@@ -886,7 +886,7 @@ class ThumbnailGrid(QScrollArea):
             # 【最终修复】等全部加载完，再执行选中
             # ==========================================
             if self._target_select_photo is not None:
-                #old skywalker self.
+
                 self.select_photo(self._target_select_photo)
                 photo_key = _photo_key(self._target_select_photo)
                 self._multi_selected.add(photo_key)
@@ -992,16 +992,29 @@ class ThumbnailGrid(QScrollArea):
             card.set_pixmap(image)
 
     def _on_badge_clicked(self, photo: dict):
-        ###old skywalker
+
         self._target_select_photo = photo
         self._anchor_photo = photo
         self.select_photo(photo)
         self.photo_selected.emit(photo)
         #self._emit_multi_selection()  # 让 compare 按钮隐藏
-        ###end
+
         burst_id = photo.get("burst_id")
         if burst_id is not None:
             self.burst_badge_clicked.emit(burst_id)
+
+    def _on_select_all(self):
+        photo_keys = [_photo_key(p) for p in self._photos]
+        lo = 0
+        hi = len(self._photos)
+        for i in range(lo, hi ):
+            key = photo_keys[i]
+            self._multi_selected.add(key)
+            card = self._cards.get(key)
+            if card:
+                card.set_multi_selected(True)
+        self._emit_multi_selection()
+        return
 
     def _on_card_clicked(self, photo: dict):
         """处理卡片点击，支持 Ctrl/Shift 多选（C3）。"""
@@ -1042,12 +1055,12 @@ class ThumbnailGrid(QScrollArea):
         else:
             # 普通点击：清空多选，单选当前，更新 anchor
             self._clear_multi_selection()
-            ###added by old skywalker
+
             self._multi_selected.add(photo_key)
             card = self._cards.get(photo_key)
             if card:
                 card.set_multi_selected(True)
-            ###end
+
             self._anchor_photo = photo
             self._last_clicked_idx = clicked_idx
             self.select_photo(photo)

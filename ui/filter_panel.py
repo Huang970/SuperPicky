@@ -303,9 +303,9 @@ class FilterPanel(QWidget):
         # --- 重置按钮 ---
         reset_btn = QPushButton(self.i18n.t("browser.reset_filter"))
         reset_btn.setObjectName("secondary")
-        ###added by old skywalker
+
         set_btn_style(reset_btn)
-        ###end
+
         reset_btn.clicked.connect(self.reset_all)
         layout.addWidget(reset_btn)
 
