@@ -277,17 +277,16 @@ class DetailPanel(QWidget):
         rating_row.addWidget(self._rating_label)
         rating_row.addStretch()
 
-        ###old skywalker
-        self._favourite_label = QLabel("")
+        self._favourite_label = QPushButton("🤍")
         self._favourite_label.setStyleSheet(f"""
-                    QLabel {{
+                    QPushButton {{
                         color: {COLORS['star_gold']};
-                        font-size: 20px;
+                        font-size: 16px;
                         background: transparent;
                     }}
                 """)
         rating_row.addWidget(self._favourite_label)
-        ###end
+        self._favourite_label.clicked.connect(self._toggle_favourite)
 
         dec_btn = QPushButton("▼")
         dec_btn.setFixedSize(28, 28)
@@ -496,6 +495,17 @@ class DetailPanel(QWidget):
     #  内部
     # ------------------------------------------------------------------
 
+    def _toggle_favourite(self):
+        if (self._favourite_label.text()=="" or self._favourite_label.text()=="🤍"):
+            new_val = 4
+        else:
+            new_val = 3
+        self._set_rating(new_val)
+        # self._set_favourite_label(new_val)
+        # self._current_photo["rating"] = new_val
+        # self._refresh_metadata()
+        # self.rating_change_requested.emit(dict(self._current_photo), new_val)
+
     def _toggle_caption(self):
         self._caption_expanded = not self._caption_expanded
         self._caption_content.setVisible(self._caption_expanded)
@@ -506,13 +516,18 @@ class DetailPanel(QWidget):
         label = self.i18n.t("browser.meta_caption")
         self._caption_toggle_btn.setText(f"{arrow} {label}")
 
-    ###old skywalker
     def _set_favourite_label(self,new_val):
         if new_val >= 4:
             self._favourite_label.setText("❤️")
         else:
-            self._favourite_label.setText("")
-    ###end
+            self._favourite_label.setText("🤍")
+
+
+    def _set_rating(self,new_val):
+        self._set_favourite_label(new_val)
+        self._current_photo["rating"] = new_val
+        self._refresh_metadata()
+        self.rating_change_requested.emit(dict(self._current_photo), new_val)
 
     def _on_rating_dec(self):
         """▼ 按钮：评分 -1（最低 -1）。"""
@@ -522,12 +537,11 @@ class DetailPanel(QWidget):
         new_val = max(-1, current - 1)
         if new_val == current:
             return
-        ###old skywalker
-        self._set_favourite_label(new_val)
-        ###end
-        self._current_photo["rating"] = new_val
-        self._refresh_metadata()
-        self.rating_change_requested.emit(dict(self._current_photo), new_val)
+        self._set_rating(new_val)
+        # self._set_favourite_label(new_val)
+        # self._current_photo["rating"] = new_val
+        # self._refresh_metadata()
+        # self.rating_change_requested.emit(dict(self._current_photo), new_val)
 
     def _on_rating_inc(self):
         """▲ 按钮：评分 +1（最高 5）。"""
@@ -537,12 +551,12 @@ class DetailPanel(QWidget):
         new_val = min(5, current + 1)
         if new_val == current:
             return
-        ###old skywalker
-        self._set_favourite_label(new_val)
-        ###end
-        self._current_photo["rating"] = new_val
-        self._refresh_metadata()
-        self.rating_change_requested.emit(dict(self._current_photo), new_val)
+        self._set_rating(new_val)
+
+        # self._set_favourite_label(new_val)
+        # self._current_photo["rating"] = new_val
+        # self._refresh_metadata()
+        # self.rating_change_requested.emit(dict(self._current_photo), new_val)
 
     def _on_copy_exif(self):
         """复制当前照片的 EXIF 信息到剪贴板。"""
@@ -648,8 +662,6 @@ class DetailPanel(QWidget):
             self._loader = None
 
         if not self._current_photo:
-            #此处需修改 old skywalker
-            #self._img_label.set_pixmap(QPixmap())
             self._img_label.set_pixmap(self._no_crop_pix)
             return
 
@@ -672,8 +684,6 @@ class DetailPanel(QWidget):
             self._loader.ready.connect(self._on_image_ready)
             self._loader.start()
         else:
-            #此处需修改 old skywalker
-            #self._img_label.set_pixmap(QPixmap())
             self._img_label.set_pixmap(self._no_crop_pix)
 
     def cleanup(self):
@@ -753,9 +763,9 @@ class DetailPanel(QWidget):
             -1: "—",
         }
         self._rating_label.setText(_rating_text.get(rating, _unknown))
-        ###old skywalker
+
         self._set_favourite_label(rating)
-        ###end
+
 
         # 对焦
         focus = p.get("focus_status") or _unknown

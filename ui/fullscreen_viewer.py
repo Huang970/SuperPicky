@@ -561,29 +561,6 @@ class _FullscreenImageLabel(QLabel):
             painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(-corner_len, 0))
             painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(0, -corner_len))
 
-            # painter.setPen(QPen(QColor(0, 220, 0), 2))
-            # painter.setBrush(Qt.NoBrush)
-            # painter.drawRect(self.select_rect.normalized())
-            #
-            # r = self.select_rect
-            # corner_len = 12  # 角的长度，你可以改
-            # pen = QPen(QColor("#33cc33"))
-            # pen.setWidth(3)
-            # painter.setPen(pen)
-            #
-            # # 左上角
-            # painter.drawLine(r.left(), r.top(), r.left() + corner_len, r.top())
-            # painter.drawLine(r.left(), r.top(), r.left(), r.top() + corner_len)
-            # # 右上角
-            # painter.drawLine(r.right(), r.top(), r.right() - corner_len, r.top())
-            # painter.drawLine(r.right(), r.top(), r.right(), r.top() + corner_len)
-            # # 左下角
-            # painter.drawLine(r.left(), r.bottom(), r.left() + corner_len, r.bottom())
-            # painter.drawLine(r.left(), r.bottom(), r.left(), r.bottom() - corner_len)
-            # # 右下角
-            # painter.drawLine(r.right(), r.bottom(), r.right() - corner_len, r.bottom())
-            # painter.drawLine(r.right(), r.bottom(), r.right(), r.bottom() - corner_len)
-
         painter.end()
 
     def resizeEvent(self, event):
@@ -598,50 +575,6 @@ class _FullscreenImageLabel(QLabel):
             y = self.height() - hh - 20
             self._zoom_hint.move(x, max(0, y))
 
-    # def mousePressEvent(self, event):
-    #     if not self._pixmap:
-    #         super().mousePressEvent(event)
-    #         return
-    #
-    #     # 右键菜单保留
-    #     if event.button() == Qt.RightButton:
-    #         self.right_clicked.emit(event.globalPosition().toPoint())
-    #         return
-    #
-    #     # 你的截图/画框逻辑
-    #     if event.button() == Qt.LeftButton:
-    #         pos = event.position().toPoint()
-    #         self.last_pos = pos
-    #         self.panning = False
-    #         self.drag_mode = None
-    #
-    #         if self.is_capturing:
-    #             r = self.select_rect.normalized()
-    #             self.drag_mode = self.get_drag_mode(pos)
-    #             if not r.isNull():
-    #                 if self.drag_mode:
-    #                     self.move_offset = pos - r.topLeft()
-    #                 elif r.contains(pos):
-    #                     self.drag_mode = "move"
-    #                     self.move_offset = pos - r.topLeft()
-    #                 else:
-    #                     self.panning = True
-    #             else:
-    #                 self.select_rect = QRect(pos, pos)
-    #         else:
-    #             self.panning = True
-    #
-    #         # 原有图片拖拽逻辑
-    #         self._ensure_manual_state()
-    #         self._drag_start_x = event.position().x()
-    #         self._drag_start_y = event.position().y()
-    #         self._drag_ox_start = self._draw_ox
-    #         self._drag_oy_start = self._draw_oy
-    #         self._drag_active = False
-    #         if not self._fit_mode:
-    #             self.setCursor(Qt.ClosedHandCursor)
-    #
-    #     super().mousePressEvent(event)
     def mousePressEvent(self, event):
         if not self._pixmap:
             super().mousePressEvent(event)
@@ -736,8 +669,10 @@ class _FullscreenImageLabel(QLabel):
                     w_ratio, h_ratio = 16, 9
                 elif ratio_text == "9:16":
                     w_ratio, h_ratio = 9, 16
+                elif ratio_text == "1:1":
+                    w_ratio, h_ratio = 1, 1
 
-                # 移动框
+                    # 移动框
                 if self.drag_mode == "move":
                     self.select_rect.moveTopLeft(pos - self.move_offset)
                     self.update()
@@ -1150,7 +1085,11 @@ class _FullscreenImageLabel(QLabel):
             self.select_rect.setRect(x, y, h, w)
         else:
             # 不同组切换：按新比例重新计算，以当前宽度为基准
-            if new_ratio == "4:3":
+            if new_ratio == "1:1":
+                if w>h:
+                    w = h
+                self.select_rect.setRect(x, y, w, w)
+            elif new_ratio == "4:3":
                 new_h = int(w * 3 / 4)
                 self.select_rect.setRect(x, y, w, new_h)
             elif new_ratio == "3:4":
@@ -1332,10 +1271,10 @@ class FullscreenViewer(QWidget):
         #h.addSpacing(20)
         # 返回按钮
         back_btn = QPushButton(self.i18n.t("browser.back"))
-        ###old skywalker
+
         set_btn_style(back_btn)
         back_btn.setToolTip(self.i18n.t("browser.title"))
-        ###end
+
         back_btn.setObjectName("secondary")
         back_btn.setFixedHeight(36)
         # back_btn.setMinimumWidth(100)
@@ -1364,7 +1303,7 @@ class FullscreenViewer(QWidget):
 
 
         self._crop_ratio_combo = QComboBox()
-        self._crop_ratio_combo.addItems(["4:3", "3:4", "16:9", "9:16", "自由裁切"])
+        self._crop_ratio_combo.addItems(["4:3", "3:4", "16:9", "9:16", "1:1","自由裁切"])
         self._crop_ratio_combo.setCurrentText("4:3")
         self._crop_ratio_combo.setFixedHeight(36)
         # 锁死宽度（这个宽度能刚好放下所有内容，不多不少）
@@ -1892,13 +1831,13 @@ class FullscreenViewer(QWidget):
         #     ext = os.path.splitext(op)[1].lower()
         #     if ext in ('.jpg', '.jpeg'):
         #         return op
-        ###old skywalkder
+
         op = photo.get("current_path")
         if op:
             op = os.path.splitext(op)[0] + ".jpg"
         if os.path.isfile(op):
             return op
-        ###end
+
         return None
 
     @Slot(object)
