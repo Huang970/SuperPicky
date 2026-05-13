@@ -49,7 +49,7 @@ _FOCUS_COLORS = {
 }
 
 # 默认勾选的对焦状态（detail_panel、其他组件参考用）
-_DEFAULT_CHECKED_FOCUS = {"BEST", "GOOD"}
+_DEFAULT_CHECKED_FOCUS = {"BEST", "GOOD", "BAD"}
 
 
 def _section_label(text: str) -> QLabel:
@@ -214,7 +214,7 @@ class FilterPanel(QWidget):
         layout.addWidget(w)
 
         self.expandBurstCheck = QCheckBox("展开全部连拍")
-        self.expandBurstCheck.setChecked(False)
+        self.expandBurstCheck.setChecked(True)
         self.expandBurstCheck.setStyleSheet(f"""
              QCheckBox {{
                  color: {COLORS['text_secondary']};
@@ -549,7 +549,7 @@ class FilterPanel(QWidget):
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )
             self._count_label.setText("⚠ 无结果")
-        elif count < 5000:
+        elif count < 1000:
             self._count_label.setStyleSheet(
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )

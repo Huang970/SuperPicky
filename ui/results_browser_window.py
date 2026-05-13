@@ -259,46 +259,50 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
 
     def _get_default_image_viewer_name():
         try:
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.jpg\UserChoice"
-            )
-            prog_id, _ = winreg.QueryValueEx(key, "ProgId")
-            winreg.CloseKey(key)
+            if sys.platform == "win32":
+                key = winreg.OpenKey(
+                    winreg.HKEY_CURRENT_USER,
+                    r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.jpg\UserChoice"
+                )
+                prog_id, _ = winreg.QueryValueEx(key, "ProgId")
+                winreg.CloseKey(key)
 
-            # ==============================================
-            # 以 AppX 开头 → 就是系统「照片」UWP应用
-            # ==============================================
-            if prog_id.startswith("AppX"):
-                return "照片"
+                # ==============================================
+                # 以 AppX 开头 → 就是系统「照片」UWP应用
+                # ==============================================
+                if prog_id.startswith("AppX"):
+                    return "照片"
 
-            # 旧版照片查看器
-            elif "PhotoViewer" in prog_id:
-                return "Windows 照片查看器"
+                # 旧版照片查看器
+                elif "PhotoViewer" in prog_id:
+                    return "Windows 照片查看器"
 
-            # 其他软件
+                # 其他软件
+                else:
+                    return "默认程序"
             else:
                 return "默认程序"
-
         except Exception:
             return "默认程序"
 
     def _default_image_viewer():
-        subprocess.Popen(["cmd", "/c", "start", "", filepath], creationflags=subprocess.CREATE_NO_WINDOW)
+        if sys.platform == "win32":
+            subprocess.Popen(["cmd", "/c", "start", "", filepath], creationflags=subprocess.CREATE_NO_WINDOW)
         return
 
-    open_app = "用 "+_get_default_image_viewer_name()+" 打开"
-    open_action = QAction(open_app, parent_widget)
-    open_action.setEnabled(bool(filepath))
-    open_action.triggered.connect(_default_image_viewer)
-    menu.addAction(open_action)
+    if sys.platform == "win32":
+        open_app = "用 "+_get_default_image_viewer_name()+" 打开"
+        open_action = QAction(open_app, parent_widget)
+        open_action.setEnabled(bool(filepath))
+        open_action.triggered.connect(_default_image_viewer)
+        menu.addAction(open_action)
 
-    if parent_widget._stack.currentIndex() == 1 and parent_widget._fullscreen._img_label.is_capturing:
-        crop_app = "拷贝到剪辑版"
-        crop_action = QAction(crop_app, parent_widget)
-        crop_action.setEnabled(True)
-        crop_action.triggered.connect(parent_widget._fullscreen._copy_to_clipboard)
-        menu.addAction(crop_action)
+        if parent_widget._stack.currentIndex() == 1 and parent_widget._fullscreen._img_label.is_capturing:
+            crop_app = "拷贝到剪辑版"
+            crop_action = QAction(crop_app, parent_widget)
+            crop_action.setEnabled(True)
+            crop_action.triggered.connect(parent_widget._fullscreen._copy_to_clipboard)
+            menu.addAction(crop_action)
 
     # 用户配置的外部应用列表（设置 → 外部应用）
     external_apps = get_advanced_config().get_external_apps()
