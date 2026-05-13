@@ -41,6 +41,7 @@ def correct_image_orientation(img: QImage) -> QImage:
 # 跟踪当前活跃的工作目录，供 sys.excepthook 写入错误日志使用
 _active_log_directory: str = None
 
+
 def get_active_log_directory() -> str:
     """返回当前活跃的工作目录路径（用于错误日志定位）"""
     return _active_log_directory

@@ -7,7 +7,7 @@ SuperPicky 常量定义
 
 # 应用版本号
 # 应用版本号
-APP_VERSION = "4.2.1-RC3"
+APP_VERSION = "4.2.6"
 
 
 # 评分对应的文件夹名称映射（向后兼容，默认中文）
@@ -31,7 +31,7 @@ RATING_FOLDER_NAMES_EN = {
 def get_rating_folder_names():
     """
     获取当前语言的评分文件夹名称映射
-    
+
     Returns:
         dict: {评分: 文件夹名称}
     """
@@ -47,10 +47,10 @@ def get_rating_folder_names():
 def get_rating_folder_name(rating: int) -> str:
     """
     获取指定评分的文件夹名称（根据当前语言）
-    
+
     Args:
         rating: 评分 (-1 to 3)
-        
+
     Returns:
         str: 文件夹名称
     """

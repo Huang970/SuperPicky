@@ -788,158 +788,6 @@ class _FullscreenImageLabel(QLabel):
 
         super().mouseMoveEvent(event)
 
-    # def mouseMoveEvent(self, event):
-    #     if not self._pixmap:
-    #         return
-    #
-    #     pos = event.position().toPoint()
-    #
-    #     if self.is_capturing:
-    #         self.update_cursor(pos)
-    #         r = self.select_rect.normalized()
-    #
-    #         if self.panning and event.buttons() & Qt.LeftButton:
-    #             self.offset += pos - self.last_pos
-    #             self.last_pos = pos
-    #             self.update()
-    #             return
-    #
-    #         if event.buttons() & Qt.LeftButton:
-    #             # ==========================
-    #             # 全局读取当前选中比例（永远记住，不会乱变）
-    #             # ==========================
-    #             try:
-    #                 ratio_text = self._crop_ratio_combo.currentText()
-    #             except:
-    #                 ratio_text = "4:3"
-    #
-    #             free_crop = (ratio_text == "自由裁切")
-    #             w_ratio, h_ratio = 4, 3
-    #
-    #             # 强制同步当前比例！！！
-    #             if ratio_text == "3:4":
-    #                 w_ratio, h_ratio = 3, 4
-    #             elif ratio_text == "16:9":
-    #                 w_ratio, h_ratio = 16, 9
-    #             elif ratio_text == "9:16":
-    #                 w_ratio, h_ratio = 9, 16
-    #
-    #             # 移动框
-    #             if self.drag_mode == "move":
-    #                 self.select_rect.moveTopLeft(pos - self.move_offset)
-    #                 self.update()
-    #                 return
-    #
-    #             # ==========================
-    #             # 拖动角/边：使用当前比例，永不跳回 4:3
-    #             # ==========================
-    #             if self.drag_mode and self.resize_fixed_pos is not None and not free_crop:
-    #                 fx = self.resize_fixed_pos.x()
-    #                 fy = self.resize_fixed_pos.y()
-    #                 mx = pos.x()
-    #                 my = pos.y()
-    #
-    #                 w = abs(mx - fx)
-    #                 h = abs(my - fy)
-    #
-    #                 # 用当前选中的比例计算
-    #                 if w * h_ratio > h * w_ratio:
-    #                     h = int(w * h_ratio / w_ratio)
-    #                 else:
-    #                     w = int(h * w_ratio / h_ratio)
-    #
-    #                 w = max(w, 1)
-    #                 h = max(h, 1)
-    #
-    #                 if self.drag_mode == "br":
-    #                     self.select_rect = QRect(fx, fy, w, h)
-    #                 elif self.drag_mode == "tl":
-    #                     self.select_rect = QRect(fx - w, fy - h, w, h)
-    #                 elif self.drag_mode == "tr":
-    #                     self.select_rect = QRect(fx, fy - h, w, h)
-    #                 elif self.drag_mode == "bl":
-    #                     self.select_rect = QRect(fx - w, fy, w, h)
-    #                 elif self.drag_mode == "r":
-    #                     self.select_rect = QRect(fx, fy, w, h)
-    #                 elif self.drag_mode == "l":
-    #                     self.select_rect = QRect(fx - w, fy, w, h)
-    #                 elif self.drag_mode == "b":
-    #                     self.select_rect = QRect(fx, fy, w, h)
-    #                 elif self.drag_mode == "t":
-    #                     self.select_rect = QRect(fx, fy - h, w, h)
-    #
-    #                 self.update()
-    #                 return
-    #
-    #             # 自由模式
-    #             if self.drag_mode and free_crop:
-    #                 m = self.drag_mode
-    #                 nr = QRect(r)
-    #                 if m == "tl":
-    #                     nr.setTopLeft(pos)
-    #                 elif m == "tr":
-    #                     nr.setTopRight(pos)
-    #                 elif m == "bl":
-    #                     nr.setBottomLeft(pos)
-    #                 elif m == "br":
-    #                     nr.setBottomRight(pos)
-    #                 elif m == "l":
-    #                     nr.setLeft(pos.x())
-    #                 elif m == "r":
-    #                     nr.setRight(pos.x())
-    #                 elif m == "t":
-    #                     nr.setTop(pos.y())
-    #                 elif m == "b":
-    #                     nr.setBottom(pos.y())
-    #                 self.select_rect = nr
-    #                 self.update()
-    #                 return
-    #
-    #             # ==========================
-    #             # 新建框：当前比例
-    #             # ==========================
-    #             sx = self.select_rect.left()
-    #             sy = self.select_rect.top()
-    #             px = pos.x()
-    #             py = pos.y()
-    #             dx = px - sx
-    #             dy = py - sy
-    #
-    #             if not free_crop:
-    #                 adx = abs(dx)
-    #                 ady = abs(dy)
-    #                 if adx * h_ratio > ady * w_ratio:
-    #                     dy = (dx / adx) * adx * h_ratio / w_ratio
-    #                 else:
-    #                     dx = (dy / ady) * ady * w_ratio / h_ratio
-    #
-    #             x2 = int(sx + dx)
-    #             y2 = int(sy + dy)
-    #             self.select_rect.setBottomRight(QPoint(x2, y2))
-    #             self.update()
-    #         return
-    #
-    #     # 普通模式拖动
-    #     if self.panning and event.buttons() & Qt.LeftButton:
-    #         self.offset += pos - self.last_pos
-    #         self.last_pos = pos
-    #         self.update()
-    #
-    #     if event.buttons() & Qt.LeftButton and not self._fit_mode:
-    #         pos = event.position()
-    #         dx = pos.x() - self._drag_start_x
-    #         dy = pos.y() - self._drag_start_y
-    #         if not self._drag_active and (abs(dx) > 3 or abs(dy) > 3):
-    #             self._drag_active = True
-    #         if self._drag_active:
-    #             self._draw_ox = self._drag_ox_start + dx
-    #             self._draw_oy = self._drag_oy_start + dy
-    #             self.update()
-    #             self._emit_transform_sync()
-    #
-    #     super().mouseMoveEvent(event)
-
-
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.panning = False
@@ -972,6 +820,12 @@ class _FullscreenImageLabel(QLabel):
 
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event):
+        """标记双击，防止第二次 release 误触发 click 逻辑。"""
+        if event.button() == Qt.LeftButton:
+            self._double_click_pending = True
+        super().mouseDoubleClickEvent(event)
+
     def wheelEvent(self, event):
         if self._pixmap is None or self._pixmap.isNull():
             return
@@ -982,23 +836,30 @@ class _FullscreenImageLabel(QLabel):
         self._last_wheel_mx = mx
         self._last_wheel_my = my
 
+        # 方案B：区分触控板 vs 鼠标滚轮
         pixel_delta = event.pixelDelta().y()
         angle_delta = event.angleDelta().y()
         if pixel_delta != 0:
+            # 触控板：按像素距离做连续缩放（跟手感）
             factor = 1.0 + pixel_delta * 0.002
         elif angle_delta != 0:
+            # 鼠标滚轮：6% 步进（比原来 15% 更细腻）
             factor = 1.06 if angle_delta > 0 else 1.0 / 1.06
         else:
             return
 
+        # 使用当前目标值（而非实际值）计算，支持快速连续滚轮累积
         base_scale = self._target_scale if self._zoom_anim_timer.isActive() else self._display_scale
         base_ox = self._target_ox if self._zoom_anim_timer.isActive() else self._draw_ox
         base_oy = self._target_oy if self._zoom_anim_timer.isActive() else self._draw_oy
 
+        # 鼠标下方的图片像素坐标（基于目标值）
         img_px = (mx - base_ox) / max(base_scale, 1e-10)
         img_py = (my - base_oy) / max(base_scale, 1e-10)
+
         new_scale = max(0.1, min(2.0, base_scale * factor))
 
+        # 方案A：设置目标值，启动动画插值
         self._target_scale = new_scale
         self._target_ox = mx - img_px * new_scale
         self._target_oy = my - img_py * new_scale
@@ -1007,7 +868,7 @@ class _FullscreenImageLabel(QLabel):
 
         if not self._zoom_anim_timer.isActive():
             self._zoom_anim_timer.start()
-
+        # 功能3：显示缩放比例提示（跟随鼠标，显示目标值）
         self._show_zoom_hint(new_scale, mx, my)
 
     def get_drag_mode(self, pos):

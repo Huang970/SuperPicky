@@ -437,7 +437,7 @@ class FilterPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _build_focus_checkboxes(self) -> QWidget:
-        """3个对焦多选 checkbox（精焦/合焦/失焦），默认精焦+合焦。"""
+        """3个对焦多选 checkbox（精焦/合焦/失焦），默认全选。"""
         _is_zh = not getattr(self.i18n, 'current_lang', 'zh_CN').startswith('en')
 
         w = QWidget()
@@ -446,8 +446,8 @@ class FilterPanel(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
 
-        # 默认勾选 BEST + GOOD
-        _defaults = {"BEST", "GOOD","BAD"}
+        # 默认勾选全部对焦状态，避免 burst 结果被默认 focus 再过滤一次
+        _defaults = set(_DEFAULT_CHECKED_FOCUS)
 
         for mode, label_zh, statuses, color in _FOCUS_OPTIONS:
             label = label_zh if _is_zh else mode
@@ -480,32 +480,6 @@ class FilterPanel(QWidget):
     #  飞行 checkbox（多选）
     # ------------------------------------------------------------------
 
-    # def _build_flight_checkboxes(self) -> QWidget:
-    #     """飞行状态：2列 checkbox，默认全选。"""
-    #     w = QWidget()
-    #     w.setStyleSheet("background: transparent;")
-    #     grid = QGridLayout(w)
-    #     grid.setContentsMargins(0, 0, 0, 0)
-    #     grid.setSpacing(6)
-    #
-    #     options = [
-    #         (1, self.i18n.t("browser.flying_option"),     0, 0),
-    #         (0, self.i18n.t("browser.non_flying_option"), 0, 1),
-    #     ]
-    #
-    #     self._flight_cbs: dict = {}
-    #     for value, label_text, row_idx, col_idx in options:
-    #         cb = QCheckBox(label_text)
-    #         cb.setChecked(True)
-    #         cb.setStyleSheet(
-    #             f"QCheckBox {{ color: {COLORS['text_secondary']}; font-size: 12px; }}"
-    #             f"QCheckBox::indicator {{ width: 12px; height: 12px; }}"
-    #         )
-    #         cb.stateChanged.connect(self._emit_filters)
-    #         self._flight_cbs[value] = cb
-    #         grid.addWidget(cb, row_idx, col_idx)
-    #
-    #     return w
     def _build_flight_checkboxes(self) -> QWidget:
         """飞行状态：2列 checkbox，与上方对焦复选框间距完全对齐"""
         w = QWidget()
@@ -653,8 +627,8 @@ class FilterPanel(QWidget):
         for m, btn in self._rating_btns.items():
             btn.setStyleSheet(self._rating_btn_style(m == _DEFAULT_RATING, m))
 
-        # 对焦 → 默认精焦+合焦
-        _defaults = {"BEST", "GOOD", "BAD"}
+        # 对焦 → 默认全选
+        _defaults = set(_DEFAULT_CHECKED_FOCUS)
         for mode, cb in self._focus_checks.items():
             cb.blockSignals(True)
             cb.setChecked(mode in _defaults)
@@ -689,10 +663,10 @@ class FilterPanel(QWidget):
         self._emit_filters()
 
     def select_all_ratings(self):
-        """回退：切换到 0星（所有有效照片）。用于默认筛选无结果时。"""
-        self._active_ratings = {"0"}
+        """回退：清空评分筛选，返回所有评分。用于默认筛选无结果时。"""
+        self._active_ratings = set()
         for m, btn in self._rating_btns.items():
-            btn.setStyleSheet(self._rating_btn_style(m == "0", m))
+            btn.setStyleSheet(self._rating_btn_style(False, m))
         self._emit_filters()
 
     # ------------------------------------------------------------------

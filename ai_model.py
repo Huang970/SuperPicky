@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 from tools.utils import log_message
-from config import config
+from config import config, get_lazy_registry
 # V3.2: 移除未使用的 sharpness 计算器导入
 from iqa_scorer import get_iqa_scorer
 from advanced_config import get_advanced_config
@@ -17,7 +17,9 @@ os.environ['YOLO_VERBOSE'] = 'False'
 
 def load_yolo_model(log_callback=None):
     """加载 YOLO 模型（使用最佳计算设备）"""
-    model_path = config.ai.get_model_path()
+    model_path = os.path.abspath(config.ai.get_model_path())
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"YOLO model file not found: {model_path}")
     model = YOLO(str(model_path))
 
     # 使用统一的设备检测逻辑
@@ -64,17 +66,12 @@ def preprocess_image(image_path, target_size=None):
 
 # V3.2: 移除 _get_sharpness_calculator（锐度现在由 keypoint_detector 计算）
 
-# 初始化全局 IQA 评分器（延迟加载）
-_iqa_scorer = None
-
-
 def _get_iqa_scorer():
     """获取 IQA 评分器单例"""
-    global _iqa_scorer
-    if _iqa_scorer is None:
-        from config import get_best_device
-        _iqa_scorer = get_iqa_scorer(device=get_best_device().type)
-    return _iqa_scorer
+    from config import get_best_device
+    registry = get_lazy_registry()
+    key = f"ai_model.iqa_scorer::{get_best_device().type}"
+    return registry.get_or_create(key, lambda: get_iqa_scorer(device=get_best_device().type))
 
 
 def detect_and_draw_birds(image_path, model, output_path, dir, ui_settings, i18n=None, skip_nima=False, focus_point=None, report_db=None):
@@ -240,6 +237,13 @@ def detect_and_draw_birds(image_path, model, output_path, dir, ui_settings, i18n
 
     # 如果没有找到鸟，记录到CSV并返回（V3.1）
     if bird_idx == -1:
+        # 诊断日志：记录 YOLO 实际返回的最高置信度，便于排查跨设备差异
+        if len(confidences) == 0:
+            log_message(f"DEBUG YOLO no_bird: {os.path.basename(image_path)} → 0 detections (all below YOLO conf_thresh=0.25)", dir)
+        else:
+            best_conf = float(confidences.max())
+            best_cls = int(class_ids[confidences.argmax()])
+            log_message(f"DEBUG YOLO no_bird: {os.path.basename(image_path)} → {len(confidences)} detections, best_conf={best_conf:.3f} cls={best_cls} (bird_class={config.ai.BIRD_CLASS_ID})", dir)
         # V3.3: 使用英文列名
         data = {
             "filename": os.path.splitext(os.path.basename(image_path))[0],

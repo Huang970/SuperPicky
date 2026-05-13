@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import subprocess
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -24,19 +25,23 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPushButton, QSlider, QProgressBar,
     QTextEdit, QGroupBox, QCheckBox, QMenuBar, QMenu,
     QFileDialog, QMessageBox, QSizePolicy, QFrame, QSpacerItem,
+    QDialog,
     QSystemTrayIcon, QApplication  # V4.0: 系统托盘图标
 )
 from PySide6.QtCore import Qt, Signal, QObject, Slot, QTimer, QPropertyAnimation, QEasingCurve, QMimeData, QThread
 from PySide6.QtGui import QFont, QPixmap, QIcon, QAction, QTextCursor, QColor, QDragEnterEvent, QDropEvent
 
-from tools.i18n import get_i18n
+from tools.i18n import get_i18n, set_primary_language
 from advanced_config import get_advanced_config
+from config import config as app_config, get_app_config_dir
 from ui.styles import (
     GLOBAL_STYLE, TITLE_STYLE, SUBTITLE_STYLE, VERSION_STYLE, VALUE_STYLE,
     COLORS, FONTS, LOG_COLORS, PROGRESS_INFO_STYLE, PROGRESS_PERCENT_STYLE
 )
 from ui.custom_dialogs import StyledMessageBox
 from ui.skill_level_dialog import SkillLevelDialog, SKILL_PRESETS, get_skill_level_thresholds
+from ui.welcome_onboarding_dialog import EnvironmentRepairDialog, WelcomeOnboardingDialog
+from core.initialization_manager import InitializationManager
 
 
 # V3.9: 支持拖放的目录输入框
@@ -85,13 +90,14 @@ class WorkerSignals(QObject):
 class WorkerThread(threading.Thread):
     """处理线程"""
 
-    def __init__(self, dir_path, ui_settings, signals, i18n=None, resume=False):
+    def __init__(self, dir_path, ui_settings, signals, i18n=None, resume=False, scan_results=None):
         super().__init__(daemon=True)
         self.dir_path = dir_path
         self.ui_settings = ui_settings
         self.signals = signals
-        self.i18n = i18n
+        self.i18n = i18n or get_i18n()
         self.resume = resume
+        self.scan_results = list(scan_results) if scan_results is not None else None
         self._stop_event = threading.Event()
         self._active_processor = None
         self.caffeinate_process = None
@@ -196,13 +202,8 @@ class WorkerThread(threading.Thread):
         try:
             import json
             import re
-            import sys as sys_module
-            import os
 
-            if sys_module.platform == 'darwin':
-                birdid_settings_dir = os.path.expanduser('~/Documents/SuperPicky_Data')
-            else:
-                birdid_settings_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'SuperPicky_Data')
+            birdid_settings_dir = str(get_app_config_dir())
             birdid_settings_path = os.path.join(birdid_settings_dir, 'birdid_dock_settings.json')
 
             if os.path.exists(birdid_settings_path):
@@ -265,8 +266,8 @@ class WorkerThread(threading.Thread):
             # BirdID 设置
             auto_identify=birdid_auto_identify,
             birdid_use_ebird=birdid_use_ebird,
-            birdid_country_code=birdid_country_code,
-            birdid_region_code=birdid_region_code,
+            birdid_country_code=birdid_country_code or "",
+            birdid_region_code=birdid_region_code or "",
             birdid_confidence_threshold=float(birdid_confidence_threshold),  # V4.2
         )
 
@@ -368,13 +369,20 @@ class WorkerThread(threading.Thread):
         )
 
         # Detect batch mode: check for subdirectories with photos
-        from core.recursive_scanner import scan_recursive, has_photos
-        sub_dirs = scan_recursive(self.dir_path, max_depth=5)
+        from core.recursive_scanner import DEFAULT_SCAN_MAX_DEPTH, scan_directories
 
-        if len(sub_dirs) <= 1:
+        scan_results = self.scan_results
+        if scan_results is None:
+            scan_results = scan_directories(self.dir_path, max_depth=DEFAULT_SCAN_MAX_DEPTH)
+
+        sub_dirs = [item.path for item in scan_results]
+
+        if len(scan_results) <= 1:
             # Single directory mode (original behavior)
+            # 若扫描到的实际目录与根目录不同（根目录无图片、子目录有图片），使用实际目录
+            single_dir = scan_results[0].path if scan_results else self.dir_path
             processor = PhotoProcessor(
-                dir_path=self.dir_path,
+                dir_path=single_dir,
                 settings=settings,
                 callbacks=callbacks
             )
@@ -407,21 +415,11 @@ class WorkerThread(threading.Thread):
             adv_config = get_advanced_config()
 
             log_callback(f"\n{'='*56}", "info")
-            log_callback(f"  \U0001f4c2 Batch mode: {len(sub_dirs)} directories detected", "info")
+            log_callback(f"  \U0001f4c2 Batch mode: {len(scan_results)} directories detected", "info")
             log_callback(f"{'='*56}", "info")
 
             # Count total photos across all dirs for progress
-            from constants import IMAGE_EXTENSIONS
-            _photo_exts = set(e.lower() for e in IMAGE_EXTENSIONS)
-            total_all = 0
-            dir_photo_counts = {}
-            for d in sub_dirs:
-                count = 0
-                for f in os.listdir(d):
-                    if os.path.splitext(f)[1].lower() in _photo_exts:
-                        count += 1
-                dir_photo_counts[d] = count
-                total_all += count
+            total_all = sum(item.photo_count for item in scan_results)
 
             processed_so_far = 0
             aggregated = {
@@ -435,9 +433,10 @@ class WorkerThread(threading.Thread):
             import time as _time
             aggregated['start_time'] = _time.time()
 
-            for idx, sub_dir in enumerate(sub_dirs, 1):
+            for idx, scanned_dir in enumerate(scan_results, 1):
+                sub_dir = scanned_dir.path
                 rel = os.path.relpath(sub_dir, self.dir_path)
-                n_photos = dir_photo_counts.get(sub_dir, 0)
+                n_photos = scanned_dir.photo_count
                 if n_photos == 0:
                     continue
 
@@ -596,113 +595,6 @@ class WorkerThread(threading.Thread):
         _log_to_file("\n".join(_end_lines), self.dir_path, file_only=True)
         # ────────────────────────────────────────────────────────
 
-class PreloadThread(QThread):
-    log_signal = Signal(object, str)  # (消息, 等级)
-    finished_signal = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._preload_done = False
-
-    def run(self):
-        def _emit_and_log(msg, level="info"):
-            self.log_signal.emit(msg, level)
-            try:
-                from tools.utils import log_message, get_active_log_directory
-                d = get_active_log_directory()
-                if d:
-                    log_message(msg, d, file_only=True)
-            except Exception:
-                pass
-
-        try:
-            import psutil
-            vm = psutil.virtual_memory()
-            free_gb = vm.available / (1024 ** 3)
-            if free_gb < 4.0:
-                _emit_and_log(f"可用内存过低: {free_gb:.1f}GB", "warning")
-            else:
-                _emit_and_log(f"可用内存充足: {free_gb:.1f}GB", "info")
-        except ImportError:
-            pass
-
-        _emit_and_log("正在后台预加载所有AI模型...", "info")
-        results = []
-
-        # 1. YOLO
-        try:
-            from ai_model import load_yolo_model
-            load_yolo_model(log_callback=lambda m, t="info": self.log_signal.emit(m, t))
-            _emit_and_log("✅ YOLO模型加载完成", "success")
-            results.append(("YOLO", True, None))
-        except Exception as e:
-            _emit_and_log(f"❌ YOLO加载失败: {e}", "warning")
-            results.append(("YOLO", False, str(e)))
-
-        # 2. 关键点
-        try:
-            from core.keypoint_detector import get_keypoint_detector
-            get_keypoint_detector().load_model()
-            _emit_and_log("✅ 关键点模型加载完成", "success")
-            results.append(("Keypoint", True, None))
-        except Exception as e:
-            _emit_and_log(f"❌ 关键点模型加载失败: {e}", "warning")
-            results.append(("Keypoint", False, str(e)))
-
-        # 3. 飞版
-        try:
-            from core.flight_detector import get_flight_detector
-            get_flight_detector().load_model()
-            _emit_and_log("✅ 飞版检测模型加载完成", "success")
-            results.append(("Flight", True, None))
-        except Exception as e:
-            _emit_and_log(f"❌ 飞版模型加载失败: {e}", "warning")
-            results.append(("Flight", False, str(e)))
-
-        # 4. IQA
-        try:
-            from config import get_best_device
-            from iqa_scorer import get_iqa_scorer
-            get_iqa_scorer(device=get_best_device().type)
-            _emit_and_log("✅ 美学评分模型加载完成", "success")
-            results.append(("IQA", True, None))
-        except Exception as e:
-            _emit_and_log(f"❌ 美学评分模型加载失败: {e}", "warning")
-            results.append(("IQA", False, str(e)))
-
-        # 5. 识鸟
-        try:
-            from birdid.bird_identifier import get_classifier
-            get_classifier()
-            _emit_and_log("✅ 识鸟模型加载完成", "success")
-            results.append(("BirdID", True, None))
-        except Exception as e:
-            _emit_and_log(f"❌ 识鸟模型加载失败: {e}", "warning")
-            results.append(("BirdID", False, str(e)))
-
-        # 汇总日志
-        ok_names = [n for n, s, _ in results if s]
-        fail_items = [(n, e) for n, s, e in results if not s]
-        try:
-            from tools.utils import log_message, get_active_log_directory
-            d = get_active_log_directory()
-            if d:
-                log_message("\n".join([
-                    "[Preload Summary]",
-                    *[f"  ✅ {n}" for n in ok_names],
-                    *[f"  ❌ {n}: {e}" for n, e in fail_items]
-                ]), d, file_only=True)
-        except Exception:
-            pass
-
-        if not fail_items:
-            _emit_and_log("🎉 所有模型预加载完成", "success")
-        else:
-            failed = ", ".join(n for n, _ in fail_items)
-            _emit_and_log(f"⚠️  预加载完成，部分模型失败：{failed}", "warning")
-
-        self._preload_done = True
-        self.finished_signal.emit()
 
 class SuperPickyMainWindow(QMainWindow):
     """SuperPicky 主窗口 - 极简艺术风格"""
@@ -728,6 +620,7 @@ class SuperPickyMainWindow(QMainWindow):
         # 初始化配置和国际化
         self.config = get_advanced_config()
         self.i18n = get_i18n(self.config.language)
+        set_primary_language(self.config.language)  # 让所有 get_i18n() 无参调用返回同一语言
 
         # 状态变量
         self.directory_path = ""
@@ -742,13 +635,14 @@ class SuperPickyMainWindow(QMainWindow):
         self._setup_ui()
         self._setup_birdid_dock()  # V4.0: 识鸟停靠面板
         self._show_initial_help()
+        self._init_manager = InitializationManager(self)
 
         # 连接重置信号
         # 连接重置信号
         self.reset_log_signal.connect(self._log)
         # 修复Crash: 确保日志信号连接到主线程槽
         # noinspection PyUnresolvedReferences
-        self.log_signal.connect(self._log, Qt.QueuedConnection)
+        self.log_signal.connect(self._log, Qt.ConnectionType.QueuedConnection)
         self.reset_complete_signal.connect(self._on_reset_complete)
         self.reset_error_signal.connect(self._on_reset_error)
         
@@ -761,7 +655,12 @@ class SuperPickyMainWindow(QMainWindow):
         QTimer.singleShot(1000, self._auto_start_birdid_server)
 
         # V4.0.1: 启动时检查更新（延迟2秒，避免阻塞UI，没有更新时不弹窗）
-        #QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
+        from advanced_config import get_advanced_config as _get_cfg_startup
+        # Keep the legacy startup auto-update path for full installs.
+        # Lightweight initialization owns first-run update probing and must
+        # completely skip automatic update work when the user disables it.
+        if _get_cfg_startup().auto_check_updates and self._skip_until_initialized("首次初始化尚未完成，暂不检查更新。"):
+            QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
         
         # V4.2: 启动时预加载所有模型（延迟3秒，后台加载不阻塞UI）
         QTimer.singleShot(3000, self._preload_all_models)
@@ -780,10 +679,10 @@ class SuperPickyMainWindow(QMainWindow):
         # V4.2: 使用默认窗口大小，不最大化
         # self.showMaximized()  # 注释掉这行，使用默认大小
         
-        # V4.3: 首次运行时显示水平选择对话框（延迟500ms，确保UI已完成渲染）
-        if self.config.is_first_run:
-            QTimer.singleShot(500, self._show_first_run_skill_level_dialog)
-        else:
+        # 首次启动欢迎向导由 run_startup_prompts 统一调度，避免重复弹窗。
+        # NOTE: onboarding 只替代“首次启动设置流程”，不替代后续手动设置入口。
+        # 因此这里仅在非首次运行时预先应用已保存的等级阈值，不在 __init__ 里直接弹窗。
+        if not self.config.is_first_run:
             # 非首次运行：根据保存的水平设置滑块
             self._apply_skill_level_thresholds(self.config.skill_level)
 
@@ -864,6 +763,14 @@ class SuperPickyMainWindow(QMainWindow):
         skill_level_action = QAction(self.i18n.t("skill_level.section_title") + "...", self)
         skill_level_action.triggered.connect(self._show_skill_level_dialog)
         settings_menu.addAction(skill_level_action)
+
+        update_action = QAction(self.i18n.t("menu.check_update"), self)
+        update_action.triggered.connect(self._show_update_center)
+        settings_menu.addAction(update_action)
+
+        repair_action = QAction(self.i18n.t("menu.environment_repair"), self)
+        repair_action.triggered.connect(self._show_environment_repair_dialog)
+        settings_menu.addAction(repair_action)
         
         settings_menu.addSeparator()
         
@@ -888,13 +795,6 @@ class SuperPickyMainWindow(QMainWindow):
 
         # 帮助菜单
         help_menu = menubar.addMenu(self.i18n.t("menu.help"))
-        
-        # 检查更新
-        update_action = QAction(self.i18n.t("menu.check_update"), self)
-        update_action.triggered.connect(self._check_for_updates)
-        help_menu.addAction(update_action)
-        
-        help_menu.addSeparator()
         
         # 关于
         about_action = QAction(self.i18n.t("menu.about"), self)
@@ -974,7 +874,7 @@ class SuperPickyMainWindow(QMainWindow):
         from .birdid_dock import BirdIDDockWidget
 
         self.birdid_dock = BirdIDDockWidget(self)
-        self.addDockWidget(Qt.RightDockWidgetArea, self.birdid_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.birdid_dock)
         
         # 设置 dock 初始宽度为最小值，让主区域更宽
         self.birdid_dock.setFixedWidth(280)
@@ -1062,19 +962,22 @@ class SuperPickyMainWindow(QMainWindow):
         # macOS: 恢复 Dock 图标
         if sys.platform == 'darwin':
             try:
-                from AppKit import NSApp, NSApplicationActivationPolicyRegular
-                NSApp.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+                import importlib
+                appkit = importlib.import_module("AppKit")
+                appkit.NSApp.setActivationPolicy_(appkit.NSApplicationActivationPolicyRegular)
                 print("✅ 已恢复 Dock 图标")
-            except ImportError:
+            except Exception:
                 pass
-            except Exception as e:
-                print(f"⚠️ 恢复 Dock 图标失败: {e}")
         
         self.show()
         self.raise_()
         self.activateWindow()
         # 确保窗口获得焦点
-        self.setWindowState(self.windowState() & ~Qt.WindowMinimized | Qt.WindowActive)
+        self.setWindowState(
+            self.windowState()
+            & ~Qt.WindowState.WindowMinimized
+            | Qt.WindowState.WindowActive
+        )
     
     def _quit_app(self):
         """完全退出应用（清理由 aboutToQuit 信号统一处理）"""
@@ -1133,7 +1036,7 @@ class SuperPickyMainWindow(QMainWindow):
             self,
             self.i18n.t("menu.background_mode_title"),
             self.i18n.t("menu.background_mode_msg"),
-            QMessageBox.Ok
+            QMessageBox.StandardButton.Ok
         )
         
         # 3. 设置后台模式标志，然后退出 GUI
@@ -1151,10 +1054,7 @@ class SuperPickyMainWindow(QMainWindow):
         """识鸟开关状态变化 - 同步到 BirdID Dock 设置"""
         import json
         try:
-            if sys.platform == 'darwin':
-                settings_dir = os.path.expanduser('~/Documents/SuperPicky_Data')
-            else:
-                settings_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'SuperPicky_Data')
+            settings_dir = str(get_app_config_dir())
             os.makedirs(settings_dir, exist_ok=True)
             settings_path = os.path.join(settings_dir, 'birdid_dock_settings.json')
             
@@ -1203,7 +1103,12 @@ class SuperPickyMainWindow(QMainWindow):
             icon_inner_layout.setContentsMargins(2, 2, 2, 2)
 
             icon_label = QLabel()
-            pixmap = QPixmap(icon_path).scaled(44, 44, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            pixmap = QPixmap(icon_path).scaled(
+                44,
+                44,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
             icon_label.setPixmap(pixmap)
             icon_inner_layout.addWidget(icon_label)
             brand_layout.addWidget(icon_container)
@@ -1246,7 +1151,7 @@ class SuperPickyMainWindow(QMainWindow):
         
         version_label = QLabel(version_text)
         version_label.setStyleSheet(VERSION_STYLE)
-        version_label.setAlignment(Qt.AlignRight | Qt.AlignBottom)
+        version_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
         header_layout.addWidget(version_label)
 
 
@@ -1343,10 +1248,7 @@ class SuperPickyMainWindow(QMainWindow):
         birdid_saved_state = False
         try:
             import json
-            if sys.platform == 'darwin':
-                settings_dir = os.path.expanduser('~/Documents/SuperPicky_Data')
-            else:
-                settings_dir = os.path.join(os.path.expanduser('~'), 'Documents', 'SuperPicky_Data')
+            settings_dir = str(get_app_config_dir())
             settings_path = os.path.join(settings_dir, 'birdid_dock_settings.json')
             if os.path.exists(settings_path):
                 with open(settings_path, 'r', encoding='utf-8') as f:
@@ -1394,7 +1296,7 @@ class SuperPickyMainWindow(QMainWindow):
         sharp_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px; min-width: 80px;")
         sharp_layout.addWidget(sharp_label)
 
-        self.sharp_slider = QSlider(Qt.Horizontal)
+        self.sharp_slider = QSlider(Qt.Orientation.Horizontal)
         self.sharp_slider.setRange(200, 600)  # 新范围 200-600
         self.sharp_slider.setValue(400)  # 新默认值
         self.sharp_slider.setSingleStep(10)  # V4.0: 更精细的调节（键盘方向键）
@@ -1405,7 +1307,7 @@ class SuperPickyMainWindow(QMainWindow):
         self.sharp_value = QLabel("400")  # 新默认值
         self.sharp_value.setStyleSheet(VALUE_STYLE)
         self.sharp_value.setFixedWidth(50)
-        self.sharp_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.sharp_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         sharp_layout.addWidget(self.sharp_value)
 
         sliders_layout.addLayout(sharp_layout)
@@ -1418,7 +1320,7 @@ class SuperPickyMainWindow(QMainWindow):
         nima_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px; min-width: 80px;")
         nima_layout.addWidget(nima_label)
 
-        self.nima_slider = QSlider(Qt.Horizontal)
+        self.nima_slider = QSlider(Qt.Orientation.Horizontal)
         self.nima_slider.setRange(40, 70)  # 新范围 4.0-7.0
         self.nima_slider.setValue(50)  # 默认值 5.0
         self.nima_slider.valueChanged.connect(self._on_nima_changed)
@@ -1427,7 +1329,7 @@ class SuperPickyMainWindow(QMainWindow):
         self.nima_value = QLabel("5.0")  # 默认值
         self.nima_value.setStyleSheet(VALUE_STYLE)
         self.nima_value.setFixedWidth(50)
-        self.nima_value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.nima_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         nima_layout.addWidget(self.nima_value)
 
         sliders_layout.addLayout(nima_layout)
@@ -1506,7 +1408,7 @@ class SuperPickyMainWindow(QMainWindow):
         """创建状态条（进度条下方，按钮上方）"""
         self._status_banner = QLabel(self.i18n.t("labels.support_format_hint"))
         self._status_banner.setFixedHeight(32)
-        self._status_banner.setAlignment(Qt.AlignCenter)
+        self._status_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status_banner.setStyleSheet(f"""
             QLabel {{
                 background-color: {COLORS['bg_card']};
@@ -1602,7 +1504,7 @@ class SuperPickyMainWindow(QMainWindow):
             self,
             self.i18n.t("labels.select_photo_dir"),
             "",
-            QFileDialog.ShowDirsOnly
+            QFileDialog.Option.ShowDirsOnly
         )
         if directory:
             self._handle_directory_selection(directory)
@@ -1638,7 +1540,7 @@ class SuperPickyMainWindow(QMainWindow):
 
     def _check_directory_health(self, directory: str):
         """检查目标目录的磁盘空间和写权限，结果输出到 UI 日志。"""
-        import shutil, os
+        import shutil
         try:
             usage = shutil.disk_usage(directory)
             free_gb = usage.free / (1024 ** 3)
@@ -1939,6 +1841,9 @@ class SuperPickyMainWindow(QMainWindow):
     @Slot()
     def _start_processing(self):
         """开始处理"""
+        if not self._require_initialization_for_processing():
+            return
+
         if not self.directory_path:
             StyledMessageBox.warning(
                 self,
@@ -2046,15 +1951,25 @@ class SuperPickyMainWindow(QMainWindow):
             return
 
         # 2. 照片数量预扫描（阻断型）
+        scan_results = None
         try:
-            import os as _os
-            from constants import IMAGE_EXTENSIONS
-            _ext_set = set(e.lower() for e in IMAGE_EXTENSIONS)
-            _photo_count = sum(
-                1 for _e in _os.scandir(self.directory_path)
-                if _e.is_file() and _os.path.splitext(_e.name)[1].lower() in _ext_set
-            )
-            if _photo_count == 0:
+            from core.recursive_scanner import DEFAULT_SCAN_MAX_DEPTH, is_dangerous_root, scan_directories
+
+            is_dangerous, reason = is_dangerous_root(self.directory_path)
+            if is_dangerous:
+                StyledMessageBox.warning(
+                    self,
+                    self.i18n.t("health.dangerous_dir_title"),
+                    self.i18n.t(
+                        "health.dangerous_dir_msg",
+                        directory=self.directory_path,
+                        reason=reason,
+                    ),
+                )
+                return
+
+            scan_results = scan_directories(self.directory_path, max_depth=DEFAULT_SCAN_MAX_DEPTH)
+            if not scan_results:
                 StyledMessageBox.warning(
                     self,
                     self.i18n.t("health.no_photos_title"),
@@ -2111,7 +2026,8 @@ class SuperPickyMainWindow(QMainWindow):
             ui_settings,
             self.worker_signals,
             self.i18n,
-            resume=resume_processing
+            resume=resume_processing,
+            scan_results=scan_results,
         )
         self.worker.start()
 
@@ -2280,11 +2196,7 @@ class SuperPickyMainWindow(QMainWindow):
                         emit_log(f"\n\U0001f504 [{idx}/{len(sub_dirs_to_reset)}] {rel}/")
                         try:
                             # Reuse CLI reset logic
-                            class _ResetArgs:
-                                pass
-                            _args = _ResetArgs()
-                            _args.directory = sub_dir
-                            _args.yes = True
+                            _args = SimpleNamespace(directory=sub_dir, yes=True)
                             from superpicky_cli import cmd_reset as _cli_reset
                             _cli_reset(_args)
                             emit_log(f"  \u2705 {rel}/ reset done")
@@ -2580,21 +2492,34 @@ class SuperPickyMainWindow(QMainWindow):
 
     def _auto_start_birdid_server(self):
         """自动启动识鸟 API 服务器（使用服务器管理器） - 在后台线程中运行"""
+        if not self._skip_until_initialized("首次初始化尚未完成，暂不启动识鸟 API 服务器。"):
+            return
+
         import threading
         
         def start_server_task():
             try:
-                from server_manager import get_server_status, start_server_daemon
-                
+                from server_manager import get_server_status, start_server_daemon, start_server_thread
+
                 # 检查是否已有服务器在运行
                 status = get_server_status()
                 if status['healthy']:
                     self.log_signal.emit(self.i18n.t("server.api_reused"), "success")
                     return
-                
-                # 启动服务器（守护进程模式）
-                success, msg, pid = start_server_daemon(log_callback=lambda m: print(m))
-                
+
+                # pythonw.exe 无控制台窗口，subprocess 会报错，改用线程模式
+                use_thread_mode = (
+                    sys.platform == "win32"
+                    and not getattr(sys, "frozen", False)
+                    and os.path.basename(sys.executable).lower() == "pythonw.exe"
+                )
+
+                if use_thread_mode:
+                    success, msg, pid = start_server_thread()
+                else:
+                    # 启动服务器（守护进程模式）
+                    success, msg, pid = start_server_daemon(log_callback=lambda m: print(m))
+
                 if success:
                     self.log_signal.emit(self.i18n.t("server.api_auto_started", port=5156), "success")
                 else:
@@ -2634,7 +2559,7 @@ class SuperPickyMainWindow(QMainWindow):
         print(message)
 
         cursor = self.log_text.textCursor()
-        cursor.movePosition(QTextCursor.End)
+        cursor.movePosition(QTextCursor.MoveOperation.End)
 
         # 根据标签选择颜色
         if tag == "error":
@@ -2843,135 +2768,338 @@ class SuperPickyMainWindow(QMainWindow):
 
     # ========== V4.2: 模型预加载功能 ==========
 
-    # def _preload_all_models(self):
-    #     """后台预加载所有AI模型（不阻塞UI）"""
-    #     import threading
-    #
-    #     def _emit_and_log(msg, level="info"):
-    #         """同时发送到 UI 和 superpicky.log"""
-    #         self.log_signal.emit(msg, level)
-    #         try:
-    #             from tools.utils import log_message
-    #             from tools.utils import get_active_log_directory
-    #             d = get_active_log_directory()
-    #             if d:
-    #                 log_message(msg, d, file_only=True)
-    #         except Exception:
-    #             pass
-    #
-    #     def preload_task():
-    #         # RAM 检查（psutil 可选依赖，缺失时跳过）
-    #         try:
-    #             import psutil
-    #             vm = psutil.virtual_memory()
-    #             free_gb = vm.available / (1024 ** 3)
-    #             if free_gb < 4.0:
-    #                 _emit_and_log(
-    #                     self.i18n.t("health.ram_low", free=f"{free_gb:.1f}"),
-    #                     "warning",
-    #                 )
-    #             else:
-    #                 _emit_and_log(
-    #                     self.i18n.t("health.ram_ok", free=f"{free_gb:.1f}"),
-    #                     "info",
-    #                 )
-    #         except ImportError:
-    #             pass  # psutil 未安装，跳过 RAM 检查
-    #
-    #         _emit_and_log(self.i18n.t("preload.preloading_models"), "info")
-    #         results = []
-    #
-    #         # 1. YOLO 检测模型
-    #         try:
-    #             from ai_model import load_yolo_model
-    #             load_yolo_model(log_callback=lambda msg, tag="info": self.log_signal.emit(msg, tag))
-    #             self.log_signal.emit(self.i18n.t("preload.yolo_loaded"), "success")
-    #             results.append(("YOLO", True, None))
-    #         except Exception as e:
-    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"YOLO: {e}"), "warning")
-    #             results.append(("YOLO", False, str(e)))
-    #
-    #         # 2. 关键点检测模型
-    #         try:
-    #             from core.keypoint_detector import get_keypoint_detector
-    #             get_keypoint_detector().load_model()
-    #             self.log_signal.emit(self.i18n.t("preload.keypoint_loaded"), "success")
-    #             results.append(("Keypoint", True, None))
-    #         except Exception as e:
-    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Keypoint: {e}"), "warning")
-    #             results.append(("Keypoint", False, str(e)))
-    #
-    #         # 3. 飞版检测模型
-    #         try:
-    #             from core.flight_detector import get_flight_detector
-    #             get_flight_detector().load_model()
-    #             self.log_signal.emit(self.i18n.t("preload.flight_loaded"), "success")
-    #             results.append(("Flight", True, None))
-    #         except Exception as e:
-    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Flight: {e}"), "warning")
-    #             results.append(("Flight", False, str(e)))
-    #
-    #         # 4. IQA/TOPIQ 美学评分模型
-    #         try:
-    #             from config import get_best_device
-    #             from iqa_scorer import get_iqa_scorer
-    #             get_iqa_scorer(device=get_best_device().type)
-    #             self.log_signal.emit(self.i18n.t("preload.iqa_loaded", fallback="✅ 美学评分模型已加载"), "success")
-    #             results.append(("IQA", True, None))
-    #         except Exception as e:
-    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"IQA: {e}"), "warning")
-    #             results.append(("IQA", False, str(e)))
-    #
-    #         # 5. 识鸟模型
-    #         try:
-    #             from birdid.bird_identifier import get_classifier
-    #             get_classifier()
-    #             self.log_signal.emit(self.i18n.t("preload.birdid_loaded"), "success")
-    #             results.append(("BirdID", True, None))
-    #         except Exception as e:
-    #             self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"BirdID: {e}"), "warning")
-    #             results.append(("BirdID", False, str(e)))
-    #
-    #         # 汇总：GUI 只显示一行结论，详情写入日志文件
-    #         ok_names = [name for name, s, _ in results if s]
-    #         fail_items = [(name, err) for name, s, err in results if not s]
-    #         summary_lines = ["[Preload Summary]"]
-    #         for name in ok_names:
-    #             summary_lines.append(f"  ✅ {name}")
-    #         for name, err in fail_items:
-    #             summary_lines.append(f"  ❌ {name}: {err}")
-    #         try:
-    #             from tools.utils import log_message, get_active_log_directory
-    #             d = get_active_log_directory()
-    #             if d:
-    #                 log_message("\n".join(summary_lines), d, file_only=True)
-    #         except Exception:
-    #             pass
-    #
-    #         if not fail_items:
-    #             self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
-    #         else:
-    #             failed_str = ", ".join(name for name, _ in fail_items)
-    #             self.log_signal.emit(
-    #                 self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
-    #                 "warning"
-    #             )
-    #         self._preload_done = True
-    #
-    #     thread = threading.Thread(target=preload_task, daemon=True)
-    #     thread.start()
-
-    # -----------------------------------------------------------------------------
-    # 函数改成安全版
-    # -----------------------------------------------------------------------------
     def _preload_all_models(self):
-        """后台预加载所有AI模型（PySide6 QThread 绝不崩溃）"""
-        self.preload_thread = PreloadThread()
-        self.preload_thread.log_signal.connect(self.log_signal.emit)
-        self.preload_thread.finished_signal.connect(lambda: setattr(self, "_preload_done", True))
-        self.preload_thread.start()
+        """后台预加载所有AI模型（不阻塞UI）"""
+        if not self._skip_until_initialized("首次初始化尚未完成，跳过模型预加载。"):
+            return
+
+        import threading
+
+        def _emit_and_log(msg, level="info"):
+            """同时发送到 UI 和 superpicky.log"""
+            self.log_signal.emit(msg, level)
+            try:
+                from tools.utils import log_message
+                from tools.utils import get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message(msg, d, file_only=True)
+            except Exception:
+                pass
+
+        def preload_task():
+            # RAM 检查（psutil 可选依赖，缺失时跳过）
+            try:
+                import psutil
+                vm = psutil.virtual_memory()
+                free_gb = vm.available / (1024 ** 3)
+                if free_gb < 4.0:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_low", free=f"{free_gb:.1f}"),
+                        "warning",
+                    )
+                else:
+                    _emit_and_log(
+                        self.i18n.t("health.ram_ok", free=f"{free_gb:.1f}"),
+                        "info",
+                    )
+            except ImportError:
+                pass  # psutil 未安装，跳过 RAM 检查
+
+            _emit_and_log(self.i18n.t("preload.preloading_models"), "info")
+            results = []
+
+            # 1. YOLO 检测模型
+            try:
+                from ai_model import load_yolo_model
+                load_yolo_model(log_callback=lambda msg, tag="info": self.log_signal.emit(msg, tag))
+                self.log_signal.emit(self.i18n.t("preload.yolo_loaded"), "success")
+                results.append(("YOLO", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"YOLO: {e}"), "warning")
+                results.append(("YOLO", False, str(e)))
+
+            # 2. 关键点检测模型
+            try:
+                from core.keypoint_detector import get_keypoint_detector
+                get_keypoint_detector().load_model()
+                self.log_signal.emit(self.i18n.t("preload.keypoint_loaded"), "success")
+                results.append(("Keypoint", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Keypoint: {e}"), "warning")
+                results.append(("Keypoint", False, str(e)))
+
+            # 3. 飞版检测模型
+            try:
+                from core.flight_detector import get_flight_detector
+                get_flight_detector().load_model()
+                self.log_signal.emit(self.i18n.t("preload.flight_loaded"), "success")
+                results.append(("Flight", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"Flight: {e}"), "warning")
+                results.append(("Flight", False, str(e)))
+
+            # 4. IQA/TOPIQ 美学评分模型
+            try:
+                from config import get_best_device
+                from iqa_scorer import get_iqa_scorer
+                device = get_best_device()
+                self.log_signal.emit(self.i18n.t("preload.iqa_loading", device=device.type), "info")
+                get_iqa_scorer(device=device.type)
+                self.log_signal.emit(self.i18n.t("preload.iqa_loaded"), "success")
+                results.append(("IQA", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"IQA: {e}"), "warning")
+                results.append(("IQA", False, str(e)))
+
+            # 5. 识鸟模型
+            try:
+                from birdid.bird_identifier import get_classifier
+                get_classifier()
+                self.log_signal.emit(self.i18n.t("preload.birdid_loaded"), "success")
+                results.append(("BirdID", True, None))
+            except Exception as e:
+                self.log_signal.emit(self.i18n.t("preload.preload_failed", error=f"BirdID: {e}"), "warning")
+                results.append(("BirdID", False, str(e)))
+
+            # 汇总：GUI 只显示一行结论，详情写入日志文件
+            ok_names = [name for name, s, _ in results if s]
+            fail_items = [(name, err) for name, s, err in results if not s]
+            summary_lines = ["[Preload Summary]"]
+            for name in ok_names:
+                summary_lines.append(f"  ✅ {name}")
+            for name, err in fail_items:
+                summary_lines.append(f"  ❌ {name}: {err}")
+            try:
+                from tools.utils import log_message, get_active_log_directory
+                d = get_active_log_directory()
+                if d:
+                    log_message("\n".join(summary_lines), d, file_only=True)
+            except Exception:
+                pass
+
+            if not fail_items:
+                self.log_signal.emit(self.i18n.t("preload.preload_complete"), "success")
+            else:
+                failed_str = ", ".join(name for name, _ in fail_items)
+                self.log_signal.emit(
+                    self.i18n.t("preload.preload_complete_with_errors", failed=failed_str),
+                    "warning"
+                )
+            self._preload_done = True
+
+        thread = threading.Thread(target=preload_task, daemon=True)
+        thread.start()
 
     # ========== V4.0.1: 更新检测功能 ==========
+
+    def _show_update_center(self):
+        """显示在线更新中心对话框"""
+        from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout,
+                                       QLabel, QPushButton, QFrame, QCheckBox)
+        from PySide6.QtCore import Qt
+        from advanced_config import get_advanced_config as _get_cfg
+        from tools.patch_manager import read_local_meta, clear_patch
+        from tools.update_checker import get_version_channel
+        from constants import APP_VERSION
+
+        cfg = _get_cfg()
+
+        # 读取实际渠道（优先 build_info.RELEASE_CHANNEL）
+        try:
+            from core.build_info import RELEASE_CHANNEL as _rc
+            channel = _rc if _rc in ('nightly', 'official') else get_version_channel(APP_VERSION)
+        except Exception:
+            channel = get_version_channel(APP_VERSION)
+
+        local_meta = read_local_meta()
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle(self.i18n.t("update.update_center_title"))
+        dialog.setMinimumWidth(420)
+        dialog.setStyleSheet(f"""
+            QDialog {{ background-color: {COLORS['bg_primary']}; }}
+            QLabel  {{ color: {COLORS['text_primary']}; font-size: 13px; }}
+        """)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 24, 24, 20)
+        layout.setSpacing(12)
+
+        # ── 標題 ──────────────────────────────────
+        title = QLabel(self.i18n.t("update.update_center_title"))
+        title.setStyleSheet(f"font-size: 18px; font-weight: 600; color: {COLORS['text_primary']};")
+        layout.addWidget(title)
+
+        # ── 版本信息區 ─────────────────────────────
+        info_frame = QFrame()
+        info_frame.setStyleSheet(f"background-color: {COLORS['bg_elevated']}; border-radius: 8px;")
+        info_layout = QVBoxLayout(info_frame)
+        info_layout.setContentsMargins(16, 12, 16, 12)
+        info_layout.setSpacing(8)
+
+        def _row(label_text, value_text, value_color=None):
+            row = QHBoxLayout()
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
+            row.addWidget(lbl)
+            row.addStretch()
+            val = QLabel(value_text)
+            color = value_color or COLORS['text_primary']
+            val.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 500;")
+            row.addWidget(val)
+            info_layout.addLayout(row)
+            return val
+
+        # 版本：合并 base + patch 显示，普通用户一眼看懂
+        patch_version = local_meta.get('patch_version', '') if local_meta else ''
+        if patch_version:
+            version_display = f"V{APP_VERSION}  +  {patch_version}"
+            version_color = COLORS['accent']
+        else:
+            version_display = f"V{APP_VERSION}"
+            version_color = COLORS['text_primary']
+        patch_val_ref = [None]  # 用列表传引用，供 _check 回调更新
+        _row(self.i18n.t("update.current_version_label"), version_display, version_color)
+
+        # 检查结果行（动态更新，打开时默认提示点检查）
+        result_val = _row(
+            self.i18n.t("update.update_center_result_label"),
+            self.i18n.t("update.update_center_result_pending"),
+            COLORS['text_muted']
+        )
+
+        layout.addWidget(info_frame)
+
+        # ── 設置區 ─────────────────────────────────
+        settings_frame = QFrame()
+        settings_frame.setStyleSheet(f"background-color: {COLORS['bg_elevated']}; border-radius: 8px;")
+        settings_layout = QVBoxLayout(settings_frame)
+        settings_layout.setContentsMargins(16, 12, 16, 12)
+        settings_layout.setSpacing(6)
+
+        cb_style = f"color: {COLORS['text_secondary']}; font-size: 13px;"
+
+        auto_cb = QCheckBox(self.i18n.t("update.update_center_auto_check"))
+        auto_cb.setStyleSheet(cb_style)
+        auto_cb.setChecked(cfg.auto_check_updates)
+        def _on_auto(checked):
+            _c = _get_cfg(); _c.set_auto_check_updates(checked); _c.save()
+        auto_cb.toggled.connect(_on_auto)
+        settings_layout.addWidget(auto_cb)
+
+        # 「接收 RC 测试版」只对正式版用户显示（RC 用户天然收到 RC 更新，无需此选项）
+        if channel == 'official':
+            prerelease_cb = QCheckBox(self.i18n.t("update.update_center_include_prerelease"))
+            prerelease_cb.setStyleSheet(cb_style)
+            prerelease_cb.setChecked(cfg.include_prerelease)
+            def _on_prerelease(checked):
+                _c = _get_cfg(); _c.set_include_prerelease(checked); _c.save()
+            prerelease_cb.toggled.connect(_on_prerelease)
+            settings_layout.addWidget(prerelease_cb)
+
+        layout.addWidget(settings_frame)
+
+        # ── 按鈕行 ─────────────────────────────────
+        btn_row = QHBoxLayout()
+
+        btn_style_primary = f"""
+            QPushButton {{
+                background-color: {COLORS['accent']};
+                color: {COLORS['bg_void']};
+                border: none; border-radius: 6px;
+                padding: 9px 18px; font-size: 13px; font-weight: 500;
+            }}
+            QPushButton:hover {{ background-color: {COLORS['accent_hover']}; }}
+            QPushButton:disabled {{ background-color: {COLORS['bg_card']}; color: {COLORS['text_muted']}; }}
+        """
+        btn_style_secondary = f"""
+            QPushButton {{
+                background-color: {COLORS['bg_card']};
+                border: 1px solid {COLORS['border']};
+                color: {COLORS['text_secondary']};
+                border-radius: 6px; padding: 9px 18px; font-size: 13px;
+            }}
+            QPushButton:hover {{ border-color: {COLORS['text_muted']}; color: {COLORS['text_primary']}; }}
+        """
+
+        check_btn = QPushButton(self.i18n.t("update.update_center_btn_check"))
+        check_btn.setStyleSheet(btn_style_primary)
+
+        def _do_check():
+            check_btn.setEnabled(False)
+            check_btn.setText(self.i18n.t("update.update_center_checking"))
+            result_val.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 13px; font-weight: 500;")
+            result_val.setText(self.i18n.t("update.update_center_checking"))
+
+            import threading
+            from PySide6.QtCore import QTimer
+            def _check():
+                try:
+                    from tools.update_checker import UpdateChecker
+                    checker = UpdateChecker()
+                    _cfg = _get_cfg()
+                    has_update, info = checker.check_for_updates(
+                        include_prerelease=_cfg.include_prerelease
+                    )
+                    info = info or {}
+                    if has_update:
+                        text  = f"{self.i18n.t('update.update_center_result_has_update')} V{info.get('version','')}"
+                        color = COLORS['accent']
+                    elif info.get('patch_applied'):
+                        text  = self.i18n.t("update.update_center_result_patch_applied")
+                        color = COLORS['accent']
+                    elif info.get('error'):
+                        text  = self.i18n.t("update.update_center_result_failed")
+                        color = COLORS['warning']
+                    else:
+                        text  = self.i18n.t("update.update_center_result_latest")
+                        color = COLORS['success']
+                except Exception as e:
+                    text  = self.i18n.t("update.update_center_result_failed")
+                    color = COLORS['warning']
+                    has_update = False
+                    info = {}
+
+                def _update_ui():
+                    result_val.setText(text)
+                    result_val.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: 500;")
+                    check_btn.setEnabled(True)
+                    check_btn.setText(self.i18n.t("update.update_center_btn_check"))
+                    if has_update and info.get('download_url'):
+                        import webbrowser
+                        webbrowser.open(info['download_url'])
+                QTimer.singleShot(0, _update_ui)
+            threading.Thread(target=_check, daemon=True).start()
+
+        check_btn.clicked.connect(_do_check)
+        btn_row.addWidget(check_btn)
+
+        # 清除補丁按鈕（只在有補丁時顯示）
+        if local_meta:
+            clear_btn = QPushButton(self.i18n.t("update.update_center_btn_clear_patch"))
+            clear_btn.setStyleSheet(btn_style_secondary)
+            def _do_clear():
+                clear_patch()
+                clear_btn.setVisible(False)
+            clear_btn.clicked.connect(_do_clear)
+            btn_row.addWidget(clear_btn)
+
+        btn_row.addStretch()
+
+        close_btn = QPushButton(self.i18n.t("update.close"))
+        close_btn.setStyleSheet(btn_style_secondary)
+        close_btn.clicked.connect(dialog.accept)
+        btn_row.addWidget(close_btn)
+
+        layout.addLayout(btn_row)
+        dialog.exec()
+
+    def _show_environment_repair_dialog(self):
+        """显示环境修复对话框，复用初始化修复逻辑但不走首启欢迎页。"""
+        dialog = EnvironmentRepairDialog(self.i18n, self.config, self)
+        dialog.start_repair()
+        dialog.exec()
 
     def _check_for_updates(self, silent=False):
         """检查更新
@@ -2993,9 +3121,10 @@ class SuperPickyMainWindow(QMainWindow):
                 has_update, update_info = checker.check_for_updates(
                     include_prerelease=_cfg.include_prerelease
                 )
-                # 静默模式下，只有有更新时才弹窗
+                # 静默模式下，只有有更新或应用了补丁时才弹窗
                 if silent and not has_update:
-                    return
+                    if not (update_info and update_info.get('patch_applied')):
+                        return
 
                 # 静默模式：跳过用户已选择忽略的版本
                 if silent and has_update and update_info:
@@ -3045,7 +3174,99 @@ class SuperPickyMainWindow(QMainWindow):
             current_version = update_info.get('current_version', '4.0.0') if update_info else '4.0.0'
             latest_version = update_info.get('version', '未知') if update_info else '未知'
             has_error = update_info.get('error') if update_info else None
-            
+            patch_applied = update_info.get('patch_applied', False) if update_info else False
+            patch_version = update_info.get('patch_version') if update_info else None
+
+            # 补丁模式：无整包更新但应用了热补丁
+            if not has_update and not has_error and patch_applied:
+                title = QLabel(self.i18n.t("update.patch_applied_title"))
+                title.setStyleSheet(f"color: {COLORS['accent']}; font-size: 18px; font-weight: 600;")
+                layout.addWidget(title)
+                layout.addSpacing(4)
+
+                info_frame = QFrame()
+                info_frame.setStyleSheet(f"background-color: {COLORS['bg_elevated']}; border-radius: 8px;")
+                info_layout = QVBoxLayout(info_frame)
+                info_layout.setContentsMargins(16, 12, 16, 12)
+                info_layout.setSpacing(8)
+
+                cur_row = QHBoxLayout()
+                cur_label = QLabel(self.i18n.t("update.current_version_label"))
+                cur_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
+                cur_row.addWidget(cur_label)
+                cur_row.addStretch()
+                cur_val = QLabel(f"V{current_version}")
+                cur_val.setStyleSheet(f"color: {COLORS['text_primary']}; font-size: 13px; font-weight: 500;")
+                cur_row.addWidget(cur_val)
+                info_layout.addLayout(cur_row)
+
+                if patch_version:
+                    pv_row = QHBoxLayout()
+                    pv_label = QLabel(self.i18n.t("update.patch_version_label"))
+                    pv_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 13px;")
+                    pv_row.addWidget(pv_label)
+                    pv_row.addStretch()
+                    pv_val = QLabel(patch_version)
+                    pv_val.setStyleSheet(f"color: {COLORS['accent']}; font-size: 13px; font-weight: 600;")
+                    pv_row.addWidget(pv_val)
+                    info_layout.addLayout(pv_row)
+
+                layout.addWidget(info_frame)
+
+                hint = QLabel(self.i18n.t("update.patch_restart_hint"))
+                hint.setStyleSheet(f"color: {COLORS['text_tertiary']}; font-size: 12px;")
+                hint.setWordWrap(True)
+                layout.addWidget(hint)
+
+                layout.addSpacing(8)
+                btn_row = QHBoxLayout()
+                btn_row.addStretch()
+
+                restart_btn = QPushButton(self.i18n.t("update.restart_now"))
+                restart_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {COLORS['accent']};
+                        color: {COLORS['bg_void']};
+                        border: none;
+                        border-radius: 6px;
+                        padding: 10px 20px;
+                        font-size: 13px;
+                        font-weight: 500;
+                    }}
+                    QPushButton:hover {{ background-color: {COLORS['accent_hover']}; }}
+                """)
+                from PySide6.QtWidgets import QApplication
+                def _restart_app():
+                    dialog.accept()
+                    app = QApplication.instance()
+                    if app is not None:
+                        app.quit()
+                restart_btn.clicked.connect(_restart_app)
+                btn_row.addWidget(restart_btn)
+
+                btn_row.addSpacing(8)
+                close_btn2 = QPushButton(self.i18n.t("update.close"))
+                close_btn2.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {COLORS['bg_card']};
+                        border: 1px solid {COLORS['border']};
+                        color: {COLORS['text_secondary']};
+                        border-radius: 6px;
+                        padding: 10px 20px;
+                        font-size: 13px;
+                    }}
+                    QPushButton:hover {{
+                        border-color: {COLORS['text_muted']};
+                        color: {COLORS['text_primary']};
+                    }}
+                """)
+                close_btn2.clicked.connect(dialog.accept)
+                btn_row.addWidget(close_btn2)
+                layout.addLayout(btn_row)
+
+                dialog.exec()
+                return
+
             if has_error:
                 title = QLabel(self.i18n.t("update.check_failed_title"))
                 title.setStyleSheet(f"color: {COLORS['warning']}; font-size: 18px; font-weight: 600;")
@@ -3101,7 +3322,7 @@ class SuperPickyMainWindow(QMainWindow):
                 
                 layout.addSpacing(8)
                 
-                download_url = "https://superpicky.jamesphotography.com.au/#download"
+                download_url = app_config.endpoints.UPDATE_DOWNLOAD_PAGE
                 
                 # 下载按钮区域
                 btn_frame = QFrame()
@@ -3228,25 +3449,82 @@ class SuperPickyMainWindow(QMainWindow):
     
     def _show_skill_level_dialog(self):
         """菜单打开水平选择对话框"""
+        # 保留此手动入口：onboarding 只负责首启流程，后续用户仍可在设置菜单中单独调整摄影等级。
         dialog = SkillLevelDialog(self.i18n, self)
         dialog.level_selected.connect(self._on_skill_level_selected)
         dialog.exec()
     
     def _show_first_run_skill_level_dialog(self):
-        """首次运行：显示水平选择对话框"""
-        dialog = SkillLevelDialog(self.i18n, self)
-        dialog.level_selected.connect(self._on_skill_level_selected)
+        """首次运行：显示轻量欢迎向导。"""
+        # Safety guard: onboarding 只允许作为首启流程出现。
+        # 如果未来旧代码路径误调用这里，非首次运行时直接跳过，避免重复打断用户。
+        # NOTE:
+        # We intentionally keep this legacy entrypoint. The dialog now embeds
+        # lightweight-package initialization, while full packages can still use
+        # the same onboarding shell as a compatibility path.
+        if not self.config.is_first_run and self._initialization_ready():
+            return
+
+        dialog = WelcomeOnboardingDialog(self.i18n, self)
+        dialog.onboarding_completed.connect(self._on_welcome_onboarding_completed)
         dialog.exec()
+
+    def _initialization_ready(self) -> bool:
+        return self._init_manager.is_ready_for_main_ui()
+
+    def _skip_until_initialized(self, log_message: str) -> bool:
+        if self._initialization_ready():
+            return True
+        self.log_signal.emit(log_message, "info")
+        return False
+
+    def _require_initialization_for_processing(self) -> bool:
+        if self._initialization_ready():
+            return True
+        StyledMessageBox.warning(
+            self,
+            self.i18n.t("messages.hint"),
+            self.i18n.t("messages.initialization_required"),
+        )
+        self._show_first_run_skill_level_dialog()
+        return False
+
+    def _resume_post_initialization_flow(self):
+        """初始化完成后补触发被首启门禁跳过的后台流程。"""
+        if not self._initialization_ready():
+            return
+
+        self.config = get_advanced_config()
+        self._apply_skill_level_thresholds(self.config.skill_level)
+        self._update_skill_level_label(self.config.skill_level)
+
+        # 首次轻量初始化完成后，这些任务之前可能被跳过，这里补一次。
+        QTimer.singleShot(200, self._preload_all_models)
+        QTimer.singleShot(400, self._auto_start_birdid_server)
+        if self.config.auto_check_updates:
+            QTimer.singleShot(600, lambda: self._check_for_updates(silent=True))
 
     def run_startup_prompts(self):
         """在启动统计同意流程结束后继续启动期弹窗/预设应用。"""
         if self._startup_prompts_ran:
             return
 
+        # Centralized first-run gating: 所有首启提示都从这里统一进入。
+        # 这样 telemetry / consent 完成后只会决策一次，避免 onboarding 被其他启动路径重复触发。
         self._startup_prompts_ran = True
-        if self.config.is_first_run:
+        needs_init = self._init_manager.needs_initialization()
+        if (
+            needs_init
+            and not self.config.is_first_run
+            and self.config.last_init_exit_reason == "interrupted"
+            and self.config.last_init_mode == "repair"
+        ):
+            self._show_environment_repair_dialog()
+            return
+        if self.config.is_first_run or needs_init:
             self._show_first_run_skill_level_dialog()
         else:
+            # 非首次运行不再进入 onboarding，只恢复上次保存的摄影等级阈值。
             self._apply_skill_level_thresholds(self.config.skill_level)
     
     def _on_skill_level_selected(self, level_key: str):
@@ -3263,6 +3541,25 @@ class SuperPickyMainWindow(QMainWindow):
         self._update_skill_level_label(level_key)
         
         print(self.i18n.t("logs.skill_level_selected", level=level_key))
+
+    def _on_welcome_onboarding_completed(self, level_key: str, auto_update_enabled: bool):
+        """处理首次启动欢迎向导完成。"""
+        # Keep signal payload order stable: (level_key, auto_update_enabled)
+        # 这里同时负责首启设置持久化与立即生效，避免状态已保存但主界面仍停留在旧阈值。
+        self.config.set_skill_level(level_key)
+        self.config.set_auto_check_updates(auto_update_enabled)
+        self.config.set_is_first_run(False)
+        self.config.set_initialization_completed(self._initialization_ready())
+        self.config.save()
+
+        self._apply_skill_level_thresholds(level_key)
+        self._update_skill_level_label(level_key)
+        self._resume_post_initialization_flow()
+
+        print(
+            f"[onboarding] first-run setup saved: "
+            f"skill_level={level_key}, auto_check_updates={auto_update_enabled}"
+        )
     
     def _apply_skill_level_thresholds(self, level_key: str):
         """应用水平预设的阈值到滑块"""

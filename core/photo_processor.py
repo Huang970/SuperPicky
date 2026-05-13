@@ -932,7 +932,8 @@ class PhotoProcessor:
     def _process_images(self, files_tbr, raw_dict, display_start: int = 1, display_total: int = None):
         """处理所有图片 - AI检测、关键点检测与评分"""
         # 获取模型（已在启动时预加载，此处仅获取引用）
-        model = load_yolo_model()
+        # 用列表包装，使闭包可替换（MPS 周期重载时需要）
+        _yolo_model_box = [load_yolo_model()]
         
         # 初始化 SQLite 报告数据库
         self.report_db = ReportDB(self.dir_path)
@@ -1117,7 +1118,11 @@ class PhotoProcessor:
             birdid_result: Dict,
             source_filename: Optional[str] = None
         ):
-            if not birdid_result or not birdid_result.get('success') or not birdid_result.get('results'):
+            if not birdid_result:
+                return
+            if birdid_result.get('error'):
+                self._log(f"  ⚠️ BirdID error [{source_filename or file_prefix}]: {birdid_result['error']}", "warning")
+            if not birdid_result.get('success') or not birdid_result.get('results'):
                 return
             source_display = source_filename or file_prefix or "?"
             top_result = birdid_result['results'][0]
@@ -1171,10 +1176,14 @@ class PhotoProcessor:
                         })
             else:
                 # 低置信度：记日志，并将候选鸟名存入 file_bird_species 供 caption 使用
-                self._log(
-                    f"  \U0001f426 Low confidence [{source_display}]: {top_result.get('cn_name', '?')} "
-                    f"({birdid_confidence:.0f}% < {self.settings.birdid_confidence_threshold}%)"
-                )
+                low_conf_name = (en_name or cn_name) if self.i18n.current_lang.startswith('en') else (cn_name or en_name)
+                self._log(self.i18n.t(
+                    "logs.birdid_low_confidence",
+                    source=source_display,
+                    name=low_conf_name or '?',
+                    confidence=birdid_confidence,
+                    threshold=self.settings.birdid_confidence_threshold,
+                ))
                 if cn_name:
                     self.file_bird_species[file_prefix] = {
                         'cn_name': cn_name,
@@ -1281,10 +1290,10 @@ class PhotoProcessor:
             }
         
         def run_yolo_detection(in_filepath: str, focus_point: Optional[Tuple[float, float]] = None):
-            # 单模型实例在“预取线程 + 主线程复选”两处复用，串行化推理调用以保证稳定性
+            # 单模型实例在”预取线程 + 主线程复选”两处复用，串行化推理调用以保证稳定性
             with yolo_infer_lock:
                 return detect_and_draw_birds(
-                    in_filepath, model, None, self.dir_path, ui_settings, None,
+                    in_filepath, _yolo_model_box[0], None, self.dir_path, ui_settings, None,
                     skip_nima=True, focus_point=focus_point,
                     report_db=self.report_db
                 )
@@ -1330,10 +1339,34 @@ class PhotoProcessor:
                 'yolo_ms': (time.time() - yolo_start) * 1000,
             }
         
+        # MPS 上每 N 张照片强制重载 YOLO，防止 MPS 显存状态累积导致模型输出崩溃
+        # 经实测：M5 在处理 5000 张时约第 1900 张完全失效，300 张间隔可有效预防
+        _YOLO_MPS_RELOAD_INTERVAL = 300
+
+        def _reload_yolo_if_mps():
+            """在 yolo_infer_lock 保护下重载 YOLO，完整释放旧模型的 MPS 状态。"""
+            if not mps_available:
+                return
+            with yolo_infer_lock:
+                old_model = _yolo_model_box[0]
+                _yolo_model_box[0] = None
+                del old_model
+                try:
+                    import torch, gc
+                    torch.mps.empty_cache()
+                    gc.collect()
+                except Exception:
+                    pass
+                _yolo_model_box[0] = load_yolo_model()
+            self._log(f"  🔄 YOLO 模型已重载（MPS 显存复位）", "info")
+
         if yolo_prefetch_enabled and yolo_result_queue is not None:
             def yolo_prefetch_worker():
                 try:
                     for idx, queued_filename in enumerate(files_tbr, 1):
+                        # MPS 周期重载：在推理前执行，确保新模型处理后续批次
+                        if mps_available and idx > 1 and (idx - 1) % _YOLO_MPS_RELOAD_INTERVAL == 0:
+                            _reload_yolo_if_mps()
                         yolo_result_queue.put(build_yolo_item(idx, queued_filename))
                 finally:
                     # 结束哨兵，保证主线程可正常退出
@@ -1424,6 +1457,21 @@ class PhotoProcessor:
                 self._log("  ⚙️ EXIF prefetch: on (v2: full metadata)")
         elif self._perf_enabled:
             self._log("  ⚙️ EXIF prefetch: off")
+
+        # 周期性 GPU 显存清理间隔（MPS 每 50 张，CUDA 每 200 张）
+        # 提前计算避免在循环内 import torch 引发 UnboundLocalError
+        try:
+            import torch as _torch_module
+            import gc as _gc_module
+            _use_mps = hasattr(_torch_module, 'backends') and _torch_module.backends.mps.is_available()
+            _use_cuda = not _use_mps and _torch_module.cuda.is_available()
+            _cache_interval = 50 if _use_mps else 200
+        except Exception:
+            _torch_module = None
+            _gc_module = None
+            _use_mps = False
+            _use_cuda = False
+            _cache_interval = 200
 
         for local_index in range(1, len(files_tbr) + 1):
             cancel_processing()
@@ -1544,22 +1592,23 @@ class PhotoProcessor:
                 progress = int((i / total_files) * 100)
                 self._progress(progress)
 
-            # 周期性 GPU 显存清理（每 200 张）
-            # MPS 不像 CUDA 会自动回收，长批次（如 13000 张）会导致显存耗尽
-            if i % 200 == 0:
+            if i % _cache_interval == 0 and _torch_module is not None:
                 try:
-                    import torch, gc
-                    if torch.backends.mps.is_available():
-                        torch.mps.empty_cache()
-                        self._log(f"  🧹 [第{i}张] MPS 显存已清理", "info")
-                    elif torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                        self._log(f"  🧹 [第{i}张] CUDA 显存已清理", "info")
+                    if _use_mps:
+                        _torch_module.mps.empty_cache()
+                        self._log(self.i18n.t("logs.mps_cache_cleared", index=i), "info")
+                    elif _use_cuda:
+                        _torch_module.cuda.empty_cache()
+                        self._log(self.i18n.t("logs.cuda_cache_cleared", index=i), "info")
                     else:
                         self._log(f"  🧹 [第{i}张] GC 已执行", "info")
-                    gc.collect()
+                    _gc_module.collect()
                 except Exception:
                     pass
+
+            # 非预取模式下的 MPS YOLO 周期重载（预取模式已在 worker 里处理）
+            if (not yolo_prefetch_enabled) and mps_available and i > 1 and (i - 1) % _YOLO_MPS_RELOAD_INTERVAL == 0:
+                _reload_yolo_if_mps()
             
             result = yolo_item.get('result')
             if result is None:
@@ -2333,7 +2382,7 @@ class PhotoProcessor:
         
         # 回收 BirdID 异步任务：补写标题并更新鸟种映射（用于后续分类目录）
         if birdid_tasks:
-            self._log(f"⏳ 正在等待剩余 BirdID 识别结果 ({len(birdid_tasks)} 个任务)...")
+            self._log(self.i18n.t("logs.birdid_waiting", count=len(birdid_tasks)))
         collect_birdid_tasks(wait=True)
         
         if birdid_executor is not None:

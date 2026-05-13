@@ -81,8 +81,9 @@ class KeypointDetector:
             # PyInstaller 打包后的路径
             return os.path.join(sys._MEIPASS, 'models', 'cub200_keypoint_resnet50_slim.pth')
         else:
-            # 开发环境：从当前文件向上找项目根目录
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # 开发环境：优先使用 main.py 注入的真实 app 根目录（补丁覆盖层兼容）
+            project_root = getattr(sys, '_SUPERPICKY_APP_ROOT',
+                                   os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             return os.path.join(project_root, 'models', 'cub200_keypoint_resnet50_slim.pth')
     
     def __init__(self, model_path: str = None):
@@ -158,9 +159,10 @@ class KeypointDetector:
         
         with torch.inference_mode():
             coords, vis = self.model(tensor)
-        
+
         coords = coords[0].cpu().numpy()
         vis = vis[0].cpu().numpy()
+        del tensor  # 立即释放 MPS/CUDA 显存，避免长批次累积
         
         # 解析结果
         left_eye = (float(coords[0, 0]), float(coords[0, 1]))

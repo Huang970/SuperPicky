@@ -702,10 +702,12 @@ class DetailPanel(QWidget):
         path = None
 
         if self._use_crop_view:
+            # 裁切图：YOLO 裁切区域，退而用干净大图
             path = p.get("debug_crop_path")
             if path and not os.path.exists(path):
                 path = p.get("temp_jpeg_path")
         else:
+            # 全图：干净 temp JPEG（无检测框叠加）
             path = p.get("temp_jpeg_path")
             # if path and not os.path.exists(path):
             #     path = p.get("debug_crop_path")

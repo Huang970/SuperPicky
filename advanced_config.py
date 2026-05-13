@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sys
 from tools.i18n import t as _t
+from config import get_app_config_dir, get_lazy_registry
 
 
 class AdvancedConfig:
@@ -87,6 +88,32 @@ class AdvancedConfig:
         # 更新提醒控制
         "ignored_update_version": None,  # 跳过提醒的版本号，如 "4.3.0"
         "include_prerelease": False,      # 是否接收 Beta/RC 更新提醒
+        "auto_check_updates": False,       # 启动时自动检查更新（含补丁）
+
+        # V4.3+: 轻量底包首启初始化状态
+        "initialization_completed": False,
+        "initialization_manifest_version": "v1",
+        "initialization_in_progress": False,
+        "last_init_exit_reason": "none",
+        "last_init_mode": "none",
+
+        # V4.3+: 运行时选择与能力探测
+        "selected_runtime_variant": "auto",   # auto | cpu | cuda | mac
+        "detected_cuda_capable": False,
+        "runtime_install_location_preference": None,  # None | default | install
+        "resolved_runtime_dir": None,
+
+        # V4.3+: 首启启用的功能集与资源记录
+        "enabled_feature_set": [
+            "core_detection",
+            "quality",
+            "keypoint",
+            "flight",
+            "birdid",
+        ],
+        "downloaded_resources": {},
+        "resolved_source_map": {},
+        "last_init_error": None,
 
         # 主界面复选框状态
         "flight_check": False,   # 飞鸟检测默认关闭（开启后速度较慢，用户可手动开启）
@@ -101,18 +128,8 @@ class AdvancedConfig:
         """初始化配置"""
         # 如果没有指定配置文件路径，使用用户目录
         if config_file is None:
-            # 获取用户主目录下的配置目录
-            if sys.platform == "darwin":  # macOS
-                config_dir = Path.home() / "Library" / "Application Support" / "SuperPicky"
-            elif sys.platform == "win32":  # Windows
-                config_dir = Path.home() / "AppData" / "Local" / "SuperPicky"
-            else:  # Linux
-                config_dir = Path.home() / ".config" / "SuperPicky"
-
-            # 创建配置目录（如果不存在）
+            config_dir = get_app_config_dir()
             config_dir.mkdir(parents=True, exist_ok=True)
-
-            # 配置文件路径
             self.config_file = str(config_dir / "advanced_config.json")
         else:
             self.config_file = config_file
@@ -374,6 +391,117 @@ class AdvancedConfig:
         """设置是否接收预发布版本提醒。"""
         self.config["include_prerelease"] = bool(value)
 
+    @property
+    def auto_check_updates(self) -> bool:
+        return self.config.get("auto_check_updates", False)
+
+    def set_auto_check_updates(self, value: bool):
+        """设置启动时是否自动检查更新。"""
+        self.config["auto_check_updates"] = bool(value)
+
+    # V4.3+: 首启初始化状态 getter/setter
+    def _set_init_config(self, key: str, value):
+        self.config[key] = value
+
+    @property
+    def initialization_completed(self) -> bool:
+        return self.config.get("initialization_completed", False)
+
+    def set_initialization_completed(self, value: bool):
+        self._set_init_config("initialization_completed", bool(value))
+
+    @property
+    def initialization_manifest_version(self) -> str:
+        return str(self.config.get("initialization_manifest_version", "v1"))
+
+    def set_initialization_manifest_version(self, value: str):
+        self._set_init_config("initialization_manifest_version", str(value or "v1"))
+
+    @property
+    def initialization_in_progress(self) -> bool:
+        return self.config.get("initialization_in_progress", False)
+
+    def set_initialization_in_progress(self, value: bool):
+        self._set_init_config("initialization_in_progress", bool(value))
+
+    @property
+    def last_init_exit_reason(self) -> str:
+        value = str(self.config.get("last_init_exit_reason", "none") or "none")
+        return value if value in ("none", "interrupted", "failed") else "none"
+
+    def set_last_init_exit_reason(self, value: str):
+        normalized = value if value in ("none", "interrupted", "failed") else "none"
+        self._set_init_config("last_init_exit_reason", normalized)
+
+    @property
+    def last_init_mode(self) -> str:
+        value = str(self.config.get("last_init_mode", "none") or "none")
+        return value if value in ("none", "init", "repair") else "none"
+
+    def set_last_init_mode(self, value: str):
+        normalized = value if value in ("none", "init", "repair") else "none"
+        self._set_init_config("last_init_mode", normalized)
+
+    @property
+    def selected_runtime_variant(self) -> str:
+        return str(self.config.get("selected_runtime_variant", "auto"))
+
+    def set_selected_runtime_variant(self, value: str):
+        if value in ("auto", "cpu", "cuda", "mac"):
+            self._set_init_config("selected_runtime_variant", value)
+
+    @property
+    def detected_cuda_capable(self) -> bool:
+        return self.config.get("detected_cuda_capable", False)
+
+    def set_detected_cuda_capable(self, value: bool):
+        self._set_init_config("detected_cuda_capable", bool(value))
+
+    @property
+    def runtime_install_location_preference(self):
+        value = self.config.get("runtime_install_location_preference", None)
+        return value if value in ("default", "install", None) else None
+
+    def set_runtime_install_location_preference(self, value):
+        normalized = value if value in ("default", "install") else None
+        self._set_init_config("runtime_install_location_preference", normalized)
+
+    @property
+    def resolved_runtime_dir(self):
+        value = self.config.get("resolved_runtime_dir", None)
+        return None if value in (None, "") else str(value)
+
+    def set_resolved_runtime_dir(self, value):
+        self._set_init_config("resolved_runtime_dir", None if not value else str(value))
+
+    @property
+    def enabled_feature_set(self) -> list:
+        return list(self.config.get("enabled_feature_set", []))
+
+    def set_enabled_feature_set(self, features: list):
+        self._set_init_config("enabled_feature_set", list(features))
+
+    @property
+    def downloaded_resources(self) -> dict:
+        return dict(self.config.get("downloaded_resources", {}))
+
+    def set_downloaded_resources(self, resources: dict):
+        self._set_init_config("downloaded_resources", dict(resources))
+
+    @property
+    def resolved_source_map(self) -> dict:
+        return dict(self.config.get("resolved_source_map", {}))
+
+    def set_resolved_source_map(self, source_map: dict):
+        self._set_init_config("resolved_source_map", dict(source_map))
+
+    @property
+    def last_init_error(self):
+        return self.config.get("last_init_error", None)
+
+    def set_last_init_error(self, value):
+        self._set_init_config("last_init_error", value if value is None else str(value))
+
     # 主界面复选框状态 getter/setter
     @property
     def flight_check(self):
@@ -422,13 +550,7 @@ class AdvancedConfig:
         return self.config.copy()
 
 
-# 全局配置实例
-_config_instance = None
-
-
 def get_advanced_config():
     """获取全局配置实例（单例模式）"""
-    global _config_instance
-    if _config_instance is None:
-        _config_instance = AdvancedConfig()
-    return _config_instance
+    registry = get_lazy_registry()
+    return registry.get_or_create("advanced_config.instance", AdvancedConfig)

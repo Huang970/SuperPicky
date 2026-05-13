@@ -166,6 +166,7 @@ class ComparisonViewer(QWidget):
                 font-size: 12px;
                 font-family: {FONTS['mono']};
                 background: transparent;
+                min-width: 60px;
             }}
         """)
         right_layout.addWidget(self._name_b)

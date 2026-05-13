@@ -43,6 +43,7 @@ from typing import Optional
 from tools.i18n import get_i18n
 from tools.report_db import ReportDB
 
+
 def _photo_identity(photo: dict) -> tuple:
     return (photo.get("source_dir") or "", photo.get("filename") or "")
 
@@ -337,8 +338,8 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
             QApplication.clipboard().setText(_fp)
         copy_action.triggered.connect(_copy_path)
     menu.addAction(copy_action)
-    menu.exec(pos)
 
+    menu.exec(pos)
 
 
 def _move_to_trash(filepath: str) -> bool:
@@ -748,7 +749,6 @@ class ResultsBrowserWindow(QMainWindow):
             return
 
     def _setup_statusbar(self):
-        # ========== 这些全部保留 ==========
         self._status_bar = QStatusBar()
         self.setStatusBar(self._status_bar)
 
@@ -1578,10 +1578,6 @@ class ResultsBrowserWindow(QMainWindow):
     #  工具方法
     # ------------------------------------------------------------------
 
-    # def _update_status(self, total: int, filtered: int):
-    #     t = self.i18n.t("browser.total_photos").format(total=total)
-    #     f = self.i18n.t("browser.filtered_photos").format(count=filtered)
-    #     self._status_bar.showMessage(f"{t}  |  {f}",0)
     def _update_status(self, total: int, filtered: int):
         t = self.i18n.t("browser.total_photos").format(total=total)
         f = self.i18n.t("browser.filtered_photos").format(count=filtered)
