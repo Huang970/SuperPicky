@@ -1,0 +1,11 @@
+{
+  "beta": {
+    "tag": "v4.2.5",
+    "updated_at": "2026-04-28T13:31:49.1612434+00:00",
+    "files": {
+      "mac_arm64": "SuperPicky_v4.2.5_arm64_e8fca74.dmg",
+      "win_cpu": "SuperPicky_Setup_Win64_4.2.5_83441f2.exe",
+      "win_cuda": "SuperPicky_CUDA_Patch_Win64_4.2.5_83441f2.exe"
+    }
+  }
+}
