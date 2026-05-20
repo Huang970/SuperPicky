@@ -576,6 +576,8 @@ class _FullscreenImageLabel(QLabel):
             self._zoom_hint.move(x, max(0, y))
 
     def mousePressEvent(self, event):
+        QApplication.processEvents()
+
         if not self._pixmap:
             super().mousePressEvent(event)
             return

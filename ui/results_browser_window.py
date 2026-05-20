@@ -16,7 +16,6 @@ import subprocess
 import sys
 import glob
 import shutil
-import winreg
 from collections import Counter
 from ctypes.wintypes import BOOL
 from datetime import datetime
@@ -260,6 +259,7 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
     def _get_default_image_viewer_name():
         try:
             if sys.platform == "win32":
+                import winreg
                 key = winreg.OpenKey(
                     winreg.HKEY_CURRENT_USER,
                     r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.jpg\UserChoice"
