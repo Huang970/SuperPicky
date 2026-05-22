@@ -9,7 +9,16 @@ COMMIT_HASH = "unknown"
 
 # 发布渠道：CI 打包时自动注入（"nightly" = RC 预发布，"official" = 正式版）
 # 本地开发默认 "dev"，不触发更新检查
-RELEASE_CHANNEL = "official"
+RELEASE_CHANNEL = "dev"
+
+
+
+
+
+
+
+
+
 
 
 

@@ -300,8 +300,10 @@ class MergedReportDB:
         elif "bird_species_cn" in filters:
             species_col = "bird_species_cn"
             species_val = filters.get("bird_species_cn")
-        
-        if isinstance(species_val, str) and species_val.strip():
+
+        if isinstance(species_val, str) and species_val.strip() == "-":
+            where_clauses.append(f"{species_col} IS NULL")
+        elif isinstance(species_val, str) and species_val.strip():
             where_clauses.append(f"{species_col} = ?")
             params.append(species_val.strip())
         
@@ -317,24 +319,45 @@ class MergedReportDB:
             order = "ORDER BY COALESCE(adj_topiq, nima_score, -1e99) DESC, filename ASC"
         else:
             order = "ORDER BY source_dir ASC, filename ASC"
-        
+
         sql, base_params = self._build_union_sql(where=where_sql, order=order, extra_params=params)
-        
+        #print("SQL MERGED:",sql)
+        #print("PARAM：",base_params)
+
         with self._lock:
             cursor = self._conn.execute(sql, base_params)
             results = [dict(row) for row in cursor.fetchall()]
         
+        # if picked_only and results:
+        #     results.sort(key=lambda x: (
+        #         x.get("adj_topiq", x.get("nima_score", -1e99)),
+        #         x.get("adj_sharpness", x.get("head_sharp", -1e99)),
+        #     ), reverse=True)
+        #     num_to_keep = max(1, int(len(results) * 0.25))
+        #     results = results[:num_to_keep]
+        #     if sort_by == "sharpness_desc":
+        #         results.sort(key=lambda x: -(x.get("adj_sharpness") or x.get("head_sharp") or -1e99))
+        #     elif sort_by == "aesthetic_desc":
+        #         results.sort(key=lambda x: -(x.get("adj_topiq") or x.get("nima_score") or -1e99))
+        #     else:
+        #         results.sort(key=lambda x: (x.get("source_dir", ""), x.get("filename", "")))
+
         if picked_only and results:
+            def safe_val(val, default=-1e99):
+                return val if val is not None else default
+
             results.sort(key=lambda x: (
-                x.get("adj_topiq", x.get("nima_score", -1e99)),
-                x.get("adj_sharpness", x.get("head_sharp", -1e99)),
+                safe_val(x.get("adj_topiq", x.get("nima_score"))),
+                safe_val(x.get("adj_sharpness", x.get("head_sharp"))),
             ), reverse=True)
+
             num_to_keep = max(1, int(len(results) * 0.25))
             results = results[:num_to_keep]
+
             if sort_by == "sharpness_desc":
-                results.sort(key=lambda x: -(x.get("adj_sharpness") or x.get("head_sharp") or -1e99))
+                results.sort(key=lambda x: -safe_val(x.get("adj_sharpness") or x.get("head_sharp")))
             elif sort_by == "aesthetic_desc":
-                results.sort(key=lambda x: -(x.get("adj_topiq") or x.get("nima_score") or -1e99))
+                results.sort(key=lambda x: -safe_val(x.get("adj_topiq") or x.get("nima_score")))
             else:
                 results.sort(key=lambda x: (x.get("source_dir", ""), x.get("filename", "")))
         

@@ -567,6 +567,7 @@ class FilterPanel(QWidget):
         current = self.species_combo.currentData()
         self.species_combo.clear()
         self.species_combo.addItem(self.i18n.t("browser.species_all"), "")
+        self.species_combo.addItem(self.i18n.t("browser.species_unidentified"), "-")
         for sp in species:
             self.species_combo.addItem(sp, sp)
         idx = self.species_combo.findData(current)

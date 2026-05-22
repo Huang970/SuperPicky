@@ -555,8 +555,14 @@ class ReportDB:
             species_col = "bird_species_cn"
             species_val = filters.get("bird_species_cn")
 
-        if isinstance(species_val, str) and species_val.strip():
-            assert species_col in {"bird_species_en", "bird_species_cn"}, f"Invalid column: {species_col}"
+        # if isinstance(species_val, str) and species_val.strip():
+        #     assert species_col in {"bird_species_en", "bird_species_cn"}, f"Invalid column: {species_col}"
+        #     where_clauses.append(f"{species_col} = ?")
+        #     params.append(species_val.strip())
+
+        if isinstance(species_val, str) and species_val.strip() == "-":
+            where_clauses.append(f"{species_col} IS NULL")
+        elif isinstance(species_val, str) and species_val.strip():
             where_clauses.append(f"{species_col} = ?")
             params.append(species_val.strip())
 
@@ -579,6 +585,9 @@ class ReportDB:
             order_sql = "ORDER BY filename ASC"
 
         sql = f"SELECT * FROM photos {where_sql} {order_sql}"
+
+        #print("SQL:",sql)
+        #print("PARAM：",params)
 
         with self._lock:
             cursor = self._conn.execute(sql, params)

@@ -659,8 +659,8 @@ class SuperPickyMainWindow(QMainWindow):
         # Keep the legacy startup auto-update path for full installs.
         # Lightweight initialization owns first-run update probing and must
         # completely skip automatic update work when the user disables it.
-        if _get_cfg_startup().auto_check_updates and self._skip_until_initialized("首次初始化尚未完成，暂不检查更新。"):
-            QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
+        #if _get_cfg_startup().auto_check_updates and self._skip_until_initialized("首次初始化尚未完成，暂不检查更新。"):
+            #QTimer.singleShot(2000, lambda: self._check_for_updates(silent=True))
         
         # V4.2: 启动时预加载所有模型（延迟3秒，后台加载不阻塞UI）
         QTimer.singleShot(3000, self._preload_all_models)
@@ -2492,8 +2492,8 @@ class SuperPickyMainWindow(QMainWindow):
 
     def _auto_start_birdid_server(self):
         """自动启动识鸟 API 服务器（使用服务器管理器） - 在后台线程中运行"""
-        if not self._skip_until_initialized("首次初始化尚未完成，暂不启动识鸟 API 服务器。"):
-            return
+        # if not self._skip_until_initialized("首次初始化尚未完成，暂不启动识鸟 API 服务器。"):
+        #     return
 
         import threading
         
@@ -2770,8 +2770,8 @@ class SuperPickyMainWindow(QMainWindow):
 
     def _preload_all_models(self):
         """后台预加载所有AI模型（不阻塞UI）"""
-        if not self._skip_until_initialized("首次初始化尚未完成，跳过模型预加载。"):
-            return
+        # if not self._skip_until_initialized("首次初始化尚未完成，跳过模型预加载。"):
+        #     return
 
         import threading
 
@@ -3462,6 +3462,8 @@ class SuperPickyMainWindow(QMainWindow):
         # We intentionally keep this legacy entrypoint. The dialog now embeds
         # lightweight-package initialization, while full packages can still use
         # the same onboarding shell as a compatibility path.
+        return
+
         if not self.config.is_first_run and self._initialization_ready():
             return
 

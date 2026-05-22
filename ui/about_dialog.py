@@ -86,7 +86,7 @@ class AboutDialog(QDialog):
         brand_layout = QVBoxLayout()
         brand_layout.setSpacing(4)
 
-        title = QLabel(self.i18n.t("app.brand_name") if self.i18n else "SuperPicky")
+        title = QLabel(self.i18n.t("app.brand_name") if self.i18n else "SuperPicky HXH")
         title.setStyleSheet(f"""
             color: {COLORS['text_primary']};
             font-size: 24px;
@@ -113,7 +113,7 @@ class AboutDialog(QDialog):
             except Exception:
                 _commit = 'dev'
 
-        version = QLabel(f"v{APP_VERSION} ({_commit})")
+        version = QLabel(f"v{APP_VERSION} ({_commit}) dev")
         version.setStyleSheet(f"""
             color: {COLORS['accent']};
             font-size: 12px;

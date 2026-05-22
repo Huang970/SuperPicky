@@ -531,6 +531,11 @@ class _FullscreenImageLabel(QLabel):
             self._draw_focus_overlay(painter, fx_s, fy_s)
 
         if self.is_capturing and not self.select_rect.isNull():
+            # ========== Win10 防崩溃 0xC0000005 ==========
+            r = self.select_rect.normalized()
+            if r.width() <= 0 or r.height() <= 0:
+                return
+
             r = self.select_rect
 
             # 外部变暗遮罩（底部不留缝隙）
@@ -576,8 +581,6 @@ class _FullscreenImageLabel(QLabel):
             self._zoom_hint.move(x, max(0, y))
 
     def mousePressEvent(self, event):
-        QApplication.processEvents()
-
         if not self._pixmap:
             super().mousePressEvent(event)
             return
