@@ -608,8 +608,8 @@ class ResultsBrowserWindow(QMainWindow):
             QComboBox {{
                 color: {COLORS['text_secondary']};
                 background: {COLORS['bg_primary']};
-                border: 1px solid #33cc33;
-                border-radius: 4px;
+                border: 1px solid {COLORS['accent_light']};
+                border-radius: 6px;
                 padding: 4px 8px;
                 font-size: 12px;
                 font-family: {FONTS['mono']};

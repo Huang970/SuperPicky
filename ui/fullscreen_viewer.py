@@ -481,92 +481,95 @@ class _FullscreenImageLabel(QLabel):
     # ── Qt 事件重写 ──────────────────────────────────────────
 
     def paintEvent(self, event):
-        if self._pixmap is None or self._pixmap.isNull():
-            super().paintEvent(event)
-            return
-
-        img_w = self._pixmap.width()
-        img_h = self._pixmap.height()
-        if img_w == 0 or img_h == 0:
-            super().paintEvent(event)
-            return
-
-        # 适配模式：每帧重算坐标（支持窗口 resize）
-        if self._fit_mode:
-            scale, ox, oy = self._get_fit_transform()
-            self._display_scale = scale
-            self._draw_ox = ox
-            self._draw_oy = oy
-        else:
-            scale = self._display_scale
-            ox = self._draw_ox
-            oy = self._draw_oy
-
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform)
-
-        if self._pixmap is None:
-            painter.end()
-            return
-
-        # 方案C：用 painter transform 绘制，让 Qt/GPU 做缩放
-        painter.save()
-        painter.translate(ox, oy)
-        painter.scale(scale, scale)
-        # 确保绘制的是 QPixmap；如果 self._pixmap 依然是 QImage（防御性检查），转为 QPixmap
-        pix = self._pixmap
-        if isinstance(pix, QImage):
-            pix = QPixmap.fromImage(pix)
-        painter.drawPixmap(0, 0, pix)
-        painter.restore()
-
-        # 焦点叠加（仅在可见且坐标/状态有效时绘制）
-        if (self._focus_visible
-                and self._focus_x is not None
-                and self._focus_y is not None
-                and self._focus_status in _FOCUS_COLORS):
-            fx_s = ox + self._focus_x * img_w * scale
-            fy_s = oy + self._focus_y * img_h * scale
-            self._draw_focus_overlay(painter, fx_s, fy_s)
-
-        if self.is_capturing and not self.select_rect.isNull():
-            # ========== Win10 防崩溃 0xC0000005 ==========
-            r = self.select_rect.normalized()
-            if r.width() <= 0 or r.height() <= 0:
+        try:
+            if self._pixmap is None or self._pixmap.isNull():
+                super().paintEvent(event)
                 return
 
-            r = self.select_rect
+            img_w = self._pixmap.width()
+            img_h = self._pixmap.height()
+            if img_w == 0 or img_h == 0:
+                super().paintEvent(event)
+                return
 
-            # 外部变暗遮罩（底部不留缝隙）
-            color_mask = QColor(0, 0, 0, 100)
-            painter.fillRect(0, 0, self.width(), r.top(), color_mask)
-            painter.fillRect(0, r.bottom() + 1, self.width(), self.height() - r.bottom() - 1, color_mask)
-            painter.fillRect(0, r.top(), r.left(), r.height(), color_mask)
-            painter.fillRect(r.right() + 1, r.top(), self.width() - r.right() - 1, r.height(), color_mask)
+            # 适配模式：每帧重算坐标（支持窗口 resize）
+            if self._fit_mode:
+                scale, ox, oy = self._get_fit_transform()
+                self._display_scale = scale
+                self._draw_ox = ox
+                self._draw_oy = oy
+            else:
+                scale = self._display_scale
+                ox = self._draw_ox
+                oy = self._draw_oy
 
-            # 粗边框
-            pen = QPen(QColor("#33cc33"), 3)
-            painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRect(r)
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+            painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
-            # 高亮四角
-            corner_len = 14
-            pen_corner = QPen(QColor("#33ff33"), 4)
-            painter.setPen(pen_corner)
+            if self._pixmap is None:
+                painter.end()
+                return
 
-            painter.drawLine(r.topLeft(), r.topLeft() + QPoint(corner_len, 0))
-            painter.drawLine(r.topLeft(), r.topLeft() + QPoint(0, corner_len))
-            painter.drawLine(r.topRight(), r.topRight() + QPoint(-corner_len, 0))
-            painter.drawLine(r.topRight(), r.topRight() + QPoint(0, corner_len))
+            # 方案C：用 painter transform 绘制，让 Qt/GPU 做缩放
+            painter.save()
+            painter.translate(ox, oy)
+            painter.scale(scale, scale)
+            # 确保绘制的是 QPixmap；如果 self._pixmap 依然是 QImage（防御性检查），转为 QPixmap
+            pix = self._pixmap
+            if isinstance(pix, QImage):
+                pix = QPixmap.fromImage(pix)
+            painter.drawPixmap(0, 0, pix)
+            painter.restore()
 
-            painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(corner_len, 0))
-            painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(0, -corner_len))
-            painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(-corner_len, 0))
-            painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(0, -corner_len))
+            # 焦点叠加（仅在可见且坐标/状态有效时绘制）
+            if (self._focus_visible
+                    and self._focus_x is not None
+                    and self._focus_y is not None
+                    and self._focus_status in _FOCUS_COLORS):
+                fx_s = ox + self._focus_x * img_w * scale
+                fy_s = oy + self._focus_y * img_h * scale
+                self._draw_focus_overlay(painter, fx_s, fy_s)
 
-        painter.end()
+            if self.is_capturing and not self.select_rect.isNull():
+                # ========== Win10 防崩溃 0xC0000005 ==========
+                r = self.select_rect.normalized()
+                if r.width() <= 0 or r.height() <= 0:
+                    return
+
+                r = self.select_rect
+
+                # 外部变暗遮罩（底部不留缝隙）
+                color_mask = QColor(0, 0, 0, 100)
+                painter.fillRect(0, 0, self.width(), r.top(), color_mask)
+                painter.fillRect(0, r.bottom() + 1, self.width(), self.height() - r.bottom() - 1, color_mask)
+                painter.fillRect(0, r.top(), r.left(), r.height(), color_mask)
+                painter.fillRect(r.right() + 1, r.top(), self.width() - r.right() - 1, r.height(), color_mask)
+
+                # 粗边框
+                pen = QPen(QColor("#33cc33"), 3)
+                painter.setPen(pen)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(r)
+
+                # 高亮四角
+                corner_len = 14
+                pen_corner = QPen(QColor("#33ff33"), 4)
+                painter.setPen(pen_corner)
+
+                painter.drawLine(r.topLeft(), r.topLeft() + QPoint(corner_len, 0))
+                painter.drawLine(r.topLeft(), r.topLeft() + QPoint(0, corner_len))
+                painter.drawLine(r.topRight(), r.topRight() + QPoint(-corner_len, 0))
+                painter.drawLine(r.topRight(), r.topRight() + QPoint(0, corner_len))
+
+                painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(corner_len, 0))
+                painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(0, -corner_len))
+                painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(-corner_len, 0))
+                painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(0, -corner_len))
+
+            painter.end()
+        except:
+            pass
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -581,249 +584,258 @@ class _FullscreenImageLabel(QLabel):
             self._zoom_hint.move(x, max(0, y))
 
     def mousePressEvent(self, event):
-        if not self._pixmap:
-            super().mousePressEvent(event)
-            return
+        try:
+            if not self._pixmap:
+                super().mousePressEvent(event)
+                return
 
-        if event.button() == Qt.RightButton:
-            self.right_clicked.emit(event.globalPosition().toPoint())
-            return
+            if event.button() == Qt.RightButton:
+                self.right_clicked.emit(event.globalPosition().toPoint())
+                return
 
-        if event.button() == Qt.LeftButton:
-            pos = event.position().toPoint()
-            self.last_pos = pos
-            self.panning = False
-            self.drag_mode = None
-            self.resize_fixed_pos = None
+            if event.button() == Qt.LeftButton:
+                pos = event.position().toPoint()
+                self.last_pos = pos
+                self.panning = False
+                self.drag_mode = None
+                self.resize_fixed_pos = None
 
-            if self.is_capturing:
-                r = self.select_rect.normalized()
-                self.drag_mode = self.get_drag_mode(pos)
+                if self.is_capturing:
+                    r = self.select_rect.normalized()
+                    self.drag_mode = self.get_drag_mode(pos)
 
-                if not r.isNull():
-                    if self.drag_mode:
-                        if self.drag_mode == "br": self.resize_fixed_pos = r.topLeft()
-                        if self.drag_mode == "tl": self.resize_fixed_pos = r.bottomRight()
-                        if self.drag_mode == "tr": self.resize_fixed_pos = r.bottomLeft()
-                        if self.drag_mode == "bl": self.resize_fixed_pos = r.topRight()
-                        if self.drag_mode == "r":  self.resize_fixed_pos = QPoint(r.left(), r.top())
-                        if self.drag_mode == "l":  self.resize_fixed_pos = QPoint(r.right(), r.top())
-                        if self.drag_mode == "b":  self.resize_fixed_pos = QPoint(r.left(), r.top())
-                        if self.drag_mode == "t":  self.resize_fixed_pos = QPoint(r.left(), r.bottom())
+                    if not r.isNull():
+                        if self.drag_mode:
+                            if self.drag_mode == "br": self.resize_fixed_pos = r.topLeft()
+                            if self.drag_mode == "tl": self.resize_fixed_pos = r.bottomRight()
+                            if self.drag_mode == "tr": self.resize_fixed_pos = r.bottomLeft()
+                            if self.drag_mode == "bl": self.resize_fixed_pos = r.topRight()
+                            if self.drag_mode == "r":  self.resize_fixed_pos = QPoint(r.left(), r.top())
+                            if self.drag_mode == "l":  self.resize_fixed_pos = QPoint(r.right(), r.top())
+                            if self.drag_mode == "b":  self.resize_fixed_pos = QPoint(r.left(), r.top())
+                            if self.drag_mode == "t":  self.resize_fixed_pos = QPoint(r.left(), r.bottom())
 
-                        self.move_offset = pos - r.topLeft()
-                    elif r.contains(pos):
-                        self.drag_mode = "move"
-                        self.move_offset = pos - r.topLeft()
+                            self.move_offset = pos - r.topLeft()
+                        elif r.contains(pos):
+                            self.drag_mode = "move"
+                            self.move_offset = pos - r.topLeft()
+                        else:
+                            self.panning = True
                     else:
-                        self.panning = True
+                        self.select_rect = QRect(pos, pos)
                 else:
-                    self.select_rect = QRect(pos, pos)
-            else:
-                self.panning = True
+                    self.panning = True
 
-            self._ensure_manual_state()
-            self._drag_start_x = event.position().x()
-            self._drag_start_y = event.position().y()
-            self._drag_ox_start = self._draw_ox
-            self._drag_oy_start = self._draw_oy
-            self._drag_active = False
-            if not self._fit_mode:
-                self.setCursor(Qt.ClosedHandCursor)
+                self._ensure_manual_state()
+                self._drag_start_x = event.position().x()
+                self._drag_start_y = event.position().y()
+                self._drag_ox_start = self._draw_ox
+                self._drag_oy_start = self._draw_oy
+                self._drag_active = False
+                if not self._fit_mode:
+                    self.setCursor(Qt.ClosedHandCursor)
 
-        super().mousePressEvent(event)
+            super().mousePressEvent(event)
+        except:
+            pass
 
     def mouseMoveEvent(self, event):
-        if not self._pixmap:
-            return
+        try:
+            if not self._pixmap:
+                return
 
-        pos = event.position().toPoint()
+            pos = event.position().toPoint()
 
-        if self.is_capturing:
-            self.update_cursor(pos)
-            r = self.select_rect.normalized()
+            if self.is_capturing:
+                self.update_cursor(pos)
+                r = self.select_rect.normalized()
 
-            # ====================== 截图模式拖动（修复好的）======================
+                # ====================== 截图模式拖动（修复好的）======================
+                if self.panning and event.buttons() & Qt.LeftButton:
+                    dx = pos.x() - self.last_pos.x()
+                    dy = pos.y() - self.last_pos.y()
+                    self._draw_ox += dx
+                    self._draw_oy += dy
+                    self.last_pos = pos
+                    self.setCursor(Qt.ClosedHandCursor)
+                    self.update()
+                    return
+                # ====================================================================
+
+                if event.buttons() & Qt.LeftButton:
+                    # ==========================
+                    # 全局读取当前选中比例（永远记住，不会乱变）
+                    # ==========================
+                    try:
+                        ratio_text = self._crop_ratio_combo.currentText()
+                    except:
+                        ratio_text = "4:3"
+
+                    free_crop = (ratio_text == "自由裁切")
+                    w_ratio, h_ratio = 4, 3
+
+                    # 强制同步当前比例！！！
+                    if ratio_text == "3:4":
+                        w_ratio, h_ratio = 3, 4
+                    elif ratio_text == "16:9":
+                        w_ratio, h_ratio = 16, 9
+                    elif ratio_text == "9:16":
+                        w_ratio, h_ratio = 9, 16
+                    elif ratio_text == "1:1":
+                        w_ratio, h_ratio = 1, 1
+
+                        # 移动框
+                    if self.drag_mode == "move":
+                        self.select_rect.moveTopLeft(pos - self.move_offset)
+                        self.update()
+                        return
+
+                    # ==========================
+                    # 拖动角/边：使用当前比例，永不跳回 4:3
+                    # ==========================
+                    if self.drag_mode and self.resize_fixed_pos is not None and not free_crop:
+                        fx = self.resize_fixed_pos.x()
+                        fy = self.resize_fixed_pos.y()
+                        mx = pos.x()
+                        my = pos.y()
+
+                        w = abs(mx - fx)
+                        h = abs(my - fy)
+
+                        # 用当前选中的比例计算
+                        if w * h_ratio > h * w_ratio:
+                            h = int(w * h_ratio / w_ratio)
+                        else:
+                            w = int(h * w_ratio / h_ratio)
+
+                        w = max(w, 1)
+                        h = max(h, 1)
+
+                        if self.drag_mode == "br":
+                            self.select_rect = QRect(fx, fy, w, h)
+                        elif self.drag_mode == "tl":
+                            self.select_rect = QRect(fx - w, fy - h, w, h)
+                        elif self.drag_mode == "tr":
+                            self.select_rect = QRect(fx, fy - h, w, h)
+                        elif self.drag_mode == "bl":
+                            self.select_rect = QRect(fx - w, fy, w, h)
+                        elif self.drag_mode == "r":
+                            self.select_rect = QRect(fx, fy, w, h)
+                        elif self.drag_mode == "l":
+                            self.select_rect = QRect(fx - w, fy, w, h)
+                        elif self.drag_mode == "b":
+                            self.select_rect = QRect(fx, fy, w, h)
+                        elif self.drag_mode == "t":
+                            self.select_rect = QRect(fx, fy - h, w, h)
+
+                        self.update()
+                        return
+
+                    # 自由模式
+                    if self.drag_mode and free_crop:
+                        m = self.drag_mode
+                        nr = QRect(r)
+                        if m == "tl":
+                            nr.setTopLeft(pos)
+                        elif m == "tr":
+                            nr.setTopRight(pos)
+                        elif m == "bl":
+                            nr.setBottomLeft(pos)
+                        elif m == "br":
+                            nr.setBottomRight(pos)
+                        elif m == "l":
+                            nr.setLeft(pos.x())
+                        elif m == "r":
+                            nr.setRight(pos.x())
+                        elif m == "t":
+                            nr.setTop(pos.y())
+                        elif m == "b":
+                            nr.setBottom(pos.y())
+                        self.select_rect = nr
+                        self.update()
+                        return
+
+                    # ==========================
+                    # 新建框：当前比例
+                    # ==========================
+                    sx = self.select_rect.left()
+                    sy = self.select_rect.top()
+                    px = pos.x()
+                    py = pos.y()
+                    dx = px - sx
+                    dy = py - sy
+
+                    if not free_crop:
+                        adx = abs(dx)
+                        ady = abs(dy)
+                        if adx * h_ratio > ady * w_ratio:
+                            dy = (dx / adx) * adx * h_ratio / w_ratio
+                        else:
+                            dx = (dy / ady) * ady * w_ratio / h_ratio
+
+                    x2 = int(sx + dx)
+                    y2 = int(sy + dy)
+                    self.select_rect.setBottomRight(QPoint(x2, y2))
+                    self.update()
+                return
+
+            # 普通模式拖动
             if self.panning and event.buttons() & Qt.LeftButton:
-                dx = pos.x() - self.last_pos.x()
-                dy = pos.y() - self.last_pos.y()
-                self._draw_ox += dx
-                self._draw_oy += dy
-                self.last_pos = pos
                 self.setCursor(Qt.ClosedHandCursor)
+                self.offset += pos - self.last_pos
+                self.last_pos = pos
                 self.update()
-                return
-            # ====================================================================
 
-            if event.buttons() & Qt.LeftButton:
-                # ==========================
-                # 全局读取当前选中比例（永远记住，不会乱变）
-                # ==========================
-                try:
-                    ratio_text = self._crop_ratio_combo.currentText()
-                except:
-                    ratio_text = "4:3"
-
-                free_crop = (ratio_text == "自由裁切")
-                w_ratio, h_ratio = 4, 3
-
-                # 强制同步当前比例！！！
-                if ratio_text == "3:4":
-                    w_ratio, h_ratio = 3, 4
-                elif ratio_text == "16:9":
-                    w_ratio, h_ratio = 16, 9
-                elif ratio_text == "9:16":
-                    w_ratio, h_ratio = 9, 16
-                elif ratio_text == "1:1":
-                    w_ratio, h_ratio = 1, 1
-
-                    # 移动框
-                if self.drag_mode == "move":
-                    self.select_rect.moveTopLeft(pos - self.move_offset)
-                    self.update()
-                    return
-
-                # ==========================
-                # 拖动角/边：使用当前比例，永不跳回 4:3
-                # ==========================
-                if self.drag_mode and self.resize_fixed_pos is not None and not free_crop:
-                    fx = self.resize_fixed_pos.x()
-                    fy = self.resize_fixed_pos.y()
-                    mx = pos.x()
-                    my = pos.y()
-
-                    w = abs(mx - fx)
-                    h = abs(my - fy)
-
-                    # 用当前选中的比例计算
-                    if w * h_ratio > h * w_ratio:
-                        h = int(w * h_ratio / w_ratio)
-                    else:
-                        w = int(h * w_ratio / h_ratio)
-
-                    w = max(w, 1)
-                    h = max(h, 1)
-
-                    if self.drag_mode == "br":
-                        self.select_rect = QRect(fx, fy, w, h)
-                    elif self.drag_mode == "tl":
-                        self.select_rect = QRect(fx - w, fy - h, w, h)
-                    elif self.drag_mode == "tr":
-                        self.select_rect = QRect(fx, fy - h, w, h)
-                    elif self.drag_mode == "bl":
-                        self.select_rect = QRect(fx - w, fy, w, h)
-                    elif self.drag_mode == "r":
-                        self.select_rect = QRect(fx, fy, w, h)
-                    elif self.drag_mode == "l":
-                        self.select_rect = QRect(fx - w, fy, w, h)
-                    elif self.drag_mode == "b":
-                        self.select_rect = QRect(fx, fy, w, h)
-                    elif self.drag_mode == "t":
-                        self.select_rect = QRect(fx, fy - h, w, h)
-
-                    self.update()
-                    return
-
-                # 自由模式
-                if self.drag_mode and free_crop:
-                    m = self.drag_mode
-                    nr = QRect(r)
-                    if m == "tl":
-                        nr.setTopLeft(pos)
-                    elif m == "tr":
-                        nr.setTopRight(pos)
-                    elif m == "bl":
-                        nr.setBottomLeft(pos)
-                    elif m == "br":
-                        nr.setBottomRight(pos)
-                    elif m == "l":
-                        nr.setLeft(pos.x())
-                    elif m == "r":
-                        nr.setRight(pos.x())
-                    elif m == "t":
-                        nr.setTop(pos.y())
-                    elif m == "b":
-                        nr.setBottom(pos.y())
-                    self.select_rect = nr
-                    self.update()
-                    return
-
-                # ==========================
-                # 新建框：当前比例
-                # ==========================
-                sx = self.select_rect.left()
-                sy = self.select_rect.top()
-                px = pos.x()
-                py = pos.y()
-                dx = px - sx
-                dy = py - sy
-
-                if not free_crop:
-                    adx = abs(dx)
-                    ady = abs(dy)
-                    if adx * h_ratio > ady * w_ratio:
-                        dy = (dx / adx) * adx * h_ratio / w_ratio
-                    else:
-                        dx = (dy / ady) * ady * w_ratio / h_ratio
-
-                x2 = int(sx + dx)
-                y2 = int(sy + dy)
-                self.select_rect.setBottomRight(QPoint(x2, y2))
-                self.update()
-            return
-
-        # 普通模式拖动
-        if self.panning and event.buttons() & Qt.LeftButton:
-            self.setCursor(Qt.ClosedHandCursor)
-            self.offset += pos - self.last_pos
-            self.last_pos = pos
-            self.update()
-
-        if event.buttons() & Qt.LeftButton and not self._fit_mode:
-            pos = event.position()
-            dx = pos.x() - self._drag_start_x
-            dy = pos.y() - self._drag_start_y
-            if not self._drag_active and (abs(dx) > 3 or abs(dy) > 3):
-                self._drag_active = True
-            if self._drag_active:
-                self._draw_ox = self._drag_ox_start + dx
-                self._draw_oy = self._drag_oy_start + dy
-                self.update()
-                self._emit_transform_sync()
-
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
-            self.panning = False
-            self.drag_mode = None
-
-            # 原有点击缩放逻辑
-            if self._double_click_pending:
-                self._double_click_pending = False
-                self._drag_active = False
-                #self.setCursor(Qt.OpenHandCursor if not self._fit_mode else Qt.CrossCursor)
-                self.setCursor(Qt.OpenHandCursor if not self._fit_mode else Qt.ArrowCursor)
-                super().mouseReleaseEvent(event)
-                return
-
-            if not self._drag_active and not self.is_capturing:
+            if event.buttons() & Qt.LeftButton and not self._fit_mode:
                 pos = event.position()
-                mx, my = pos.x(), pos.y()
-                if self._fit_mode:
-                    self._zoom_to_100(mx, my)
-                else:
-                    self._fit_mode = True
-                    #self.setCursor(Qt.CrossCursor)
-                    self.setCursor(Qt.ArrowCursor)
+                dx = pos.x() - self._drag_start_x
+                dy = pos.y() - self._drag_start_y
+                if not self._drag_active and (abs(dx) > 3 or abs(dy) > 3):
+                    self._drag_active = True
+                if self._drag_active:
+                    self._draw_ox = self._drag_ox_start + dx
+                    self._draw_oy = self._drag_oy_start + dy
                     self.update()
                     self._emit_transform_sync()
-            else:
-                if not self._fit_mode and not self.is_capturing:
-                    self.setCursor(Qt.OpenHandCursor)
-            self._drag_active = False
 
-        super().mouseReleaseEvent(event)
+            super().mouseMoveEvent(event)
+        except:
+            pass
+
+    def mouseReleaseEvent(self, event):
+        try:
+            if event.button() == Qt.LeftButton:
+                self.panning = False
+                self.drag_mode = None
+
+                # 原有点击缩放逻辑
+                if self._double_click_pending:
+                    self._double_click_pending = False
+                    self._drag_active = False
+                    #self.setCursor(Qt.OpenHandCursor if not self._fit_mode else Qt.CrossCursor)
+                    self.setCursor(Qt.OpenHandCursor if not self._fit_mode else Qt.ArrowCursor)
+                    super().mouseReleaseEvent(event)
+                    return
+
+                if not self._drag_active and not self.is_capturing:
+                    pos = event.position()
+                    mx, my = pos.x(), pos.y()
+                    if self._fit_mode:
+                        self._zoom_to_100(mx, my)
+                    else:
+                        self._fit_mode = True
+                        #self.setCursor(Qt.CrossCursor)
+                        self.setCursor(Qt.ArrowCursor)
+                        self.update()
+                        self._emit_transform_sync()
+                else:
+                    if not self._fit_mode and not self.is_capturing:
+                        self.setCursor(Qt.OpenHandCursor)
+                self._drag_active = False
+
+            super().mouseReleaseEvent(event)
+        except:
+            pass
 
     def mouseDoubleClickEvent(self, event):
         """标记双击，防止第二次 release 误触发 click 逻辑。"""
@@ -1175,13 +1187,14 @@ class FullscreenViewer(QWidget):
         # 锁死宽度（这个宽度能刚好放下所有内容，不多不少）
         #self._crop_ratio_combo.setFixedWidth(60)  # 这是最小值！不能再小了
 
+
         # 极致紧凑样式
         self._crop_ratio_combo.setStyleSheet(f"""
             QComboBox {{
                 color: {COLORS['text_secondary']};
                 background: {COLORS['bg_primary']};
-                border: 1px solid #33cc33;
-                border-radius: 3px;
+                border: 1px solid {COLORS['accent_light']};
+                border-radius: 6px;
                 font-size: 12px;  
                 font-family: {FONTS['mono']};
                 padding-left: 8px; 
