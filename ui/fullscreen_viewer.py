@@ -547,25 +547,54 @@ class _FullscreenImageLabel(QLabel):
                 painter.fillRect(r.right() + 1, r.top(), self.width() - r.right() - 1, r.height(), color_mask)
 
                 # 粗边框
-                pen = QPen(QColor("#33cc33"), 3)
+                #pen = QPen(QColor("#33cc33"), 3)
+                pen = QPen(Qt.gray, 3)
                 painter.setPen(pen)
                 painter.setBrush(Qt.NoBrush)
                 painter.drawRect(r)
 
                 # 高亮四角
                 corner_len = 14
-                pen_corner = QPen(QColor("#33ff33"), 4)
+                #pen_corner = QPen(QColor("#33ff33"), 4)
+                pen_corner = QPen(Qt.gray, 5)
                 painter.setPen(pen_corner)
 
+                # painter.drawLine(r.topLeft(), r.topLeft() + QPoint(corner_len, 0))
+                # painter.drawLine(r.topLeft(), r.topLeft() + QPoint(0, corner_len))
+                # painter.drawLine(r.topRight(), r.topRight() + QPoint(-corner_len, 0))
+                # painter.drawLine(r.topRight(), r.topRight() + QPoint(0, corner_len))
+                #
+                # painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(corner_len, 0))
+                # painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(0, -corner_len))
+                # painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(-corner_len, 0))
+                # painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(0, -corner_len))
+                # 顶部左角（不变）
                 painter.drawLine(r.topLeft(), r.topLeft() + QPoint(corner_len, 0))
                 painter.drawLine(r.topLeft(), r.topLeft() + QPoint(0, corner_len))
-                painter.drawLine(r.topRight(), r.topRight() + QPoint(-corner_len, 0))
-                painter.drawLine(r.topRight(), r.topRight() + QPoint(0, corner_len))
 
-                painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(corner_len, 0))
-                painter.drawLine(r.bottomLeft(), r.bottomLeft() + QPoint(0, -corner_len))
-                painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(-corner_len, 0))
-                painter.drawLine(r.bottomRight(), r.bottomRight() + QPoint(0, -corner_len))
+                # 顶部右角 → 竖线横坐标 向右+1
+                painter.drawLine(r.topRight() + QPoint(1, 0), r.topRight() + QPoint(-corner_len + 1, 0))
+                painter.drawLine(r.topRight() + QPoint(1, 0), r.topRight() + QPoint(1, corner_len))
+
+                # 底部左角 → 横线纵坐标 向下+1
+                painter.drawLine(r.bottomLeft() + QPoint(0, 1), r.bottomLeft() + QPoint(corner_len, 1))
+                painter.drawLine(r.bottomLeft() + QPoint(0, 1), r.bottomLeft() + QPoint(0, -corner_len + 1))
+
+                # 底部右角 → 整体 向右+1、向下+1
+                painter.drawLine(r.bottomRight() + QPoint(1, 1), r.bottomRight() + QPoint(-corner_len + 1, 1))
+                painter.drawLine(r.bottomRight() + QPoint(1, 1), r.bottomRight() + QPoint(1, -corner_len + 1))
+
+                # 九宫格绘制
+                painter.setPen(QPen(Qt.gray, 1, Qt.DashLine))
+                #painter.setPen(QPen(QColor("#33ff33"), 1, Qt.DashLine))
+                h1 = r.top() + r.height() / 3
+                h2 = r.top() + r.height() * 2 / 3
+                w1 = r.left() + r.width() / 3
+                w2 = r.left() + r.width() * 2 / 3
+                painter.drawLine(r.left(), h1, r.right(), h1)
+                painter.drawLine(r.left(), h2, r.right(), h2)
+                painter.drawLine(w1, r.top(), w1, r.bottom())
+                painter.drawLine(w2, r.top(), w2, r.bottom())
 
             painter.end()
         except:
