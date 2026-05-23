@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QStatusBar, QFileDialog,
     QSlider, QComboBox, QMessageBox, QSizePolicy, QApplication,
-    QStackedWidget, QMenu,QLineEdit
+    QStackedWidget, QMenu,QLineEdit,QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, Slot, QProcess,QTimer,QThread
 from PySide6.QtGui import QAction, QKeyEvent, QIcon, QFont
@@ -303,6 +303,13 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
             crop_action.setEnabled(True)
             crop_action.triggered.connect(parent_widget._fullscreen._copy_to_clipboard)
             menu.addAction(crop_action)
+
+        if parent_widget._thumb_grid.get_multi_selected_photos():
+            change_name_app = "修改鸟种名称"
+            change_name_action = QAction(change_name_app, parent_widget)
+            change_name_action.setEnabled(True)
+            change_name_action.triggered.connect(parent_widget._change_bird_name)
+            menu.addAction(change_name_action)
 
     # 用户配置的外部应用列表（设置 → 外部应用）
     external_apps = get_advanced_config().get_external_apps()
@@ -687,6 +694,99 @@ class ResultsBrowserWindow(QMainWindow):
         layout.addWidget(self._size_slider)
 
         return bar
+
+    def update_brid_species(self, photo):
+        filename = photo.get("filename")
+        for p in self._all_photos:
+            if p.get("filename") == filename:
+                # 直接同步内存数据
+                p["bird_species_cn"] = photo.get("bird_species_cn", "")
+                p["bird_species_en"] = photo.get("bird_species_en", "")
+                break
+
+    def _change_bird_name(self):
+        # 1. 获取选中照片
+        selected_list = self._thumb_grid.get_multi_selected_photos()
+        if not selected_list:
+            QMessageBox.warning(self, "提示", "请先用Ctrl+鼠标左键选择需要修改鸟种名的图片！")
+            return
+
+        # 2. 语言判断（和你鸟种名代码完全一样）
+        lang = getattr(self.i18n, 'current_lang', 'zh_CN')
+        is_zh = not lang.startswith('en')
+
+        # 3. 取出当前选中第一张的鸟名，作为默认值
+        first_photo = selected_list[0]
+        if is_zh:
+            old_name = first_photo.get("bird_species_cn") or first_photo.get("bird_species_en") or ""
+        else:
+            old_name = first_photo.get("bird_species_en") or first_photo.get("bird_species_cn") or ""
+
+        # 4. 弹出输入框
+        new_name, ok = QInputDialog.getText(self, "修改鸟种名", "新鸟种名：", QLineEdit.Normal, old_name)
+        if not ok or not new_name.strip():
+            return
+        new_name = new_name.strip()
+
+        # 5. 批量修改：内存 + DB（完全按你项目的 update_photo 格式）
+        for p in selected_list:
+            # 根据语言决定修改哪个字段
+            if is_zh:
+                p["bird_species_cn"] = new_name
+            else:
+                p["bird_species_en"] = new_name
+
+            # 数据库更新（完全照搬你 rating 的写法）
+            filename = p.get("filename") or ""
+            db_key = _photo_db_key(p) if p else filename
+            if self._db:
+                if is_zh:
+                    self._db.update_photo(db_key, {"bird_species_cn": new_name})
+                else:
+                    self._db.update_photo(db_key, {"bird_species_en": new_name})
+
+            # 3. 【只更新数据】和card/UI完全无关
+            self._thumb_grid.update_brid_species(p)
+
+            self.update_brid_species(p)
+
+        # ==========================
+        # 刷新 1：DetailPanel
+        # ==========================
+        if is_zh:
+            self._detail_panel._current_photo["bird_species_cn"] = new_name
+        else:
+            self._detail_panel._current_photo["bird_species_en"] = new_name
+
+        self._detail_panel._refresh_metadata()
+
+        # ==========================
+        # 刷新 2：FilterPanel 鸟种下拉（100% 匹配你代码）
+        # ==========================
+        if hasattr(self, "_filter_panel"):
+            # 从所有照片里重新收集所有鸟种名称
+            all_photos = self._all_photos
+            species_set = set()
+
+            for photo in all_photos:
+                s = photo.get("bird_species_cn", "") if is_zh else photo.get("bird_species_en", "")
+                if s:
+                    species_set.add(s)
+
+            # 转成排序后的列表
+            species_list = sorted(species_set)
+
+            # 全部改名
+            self._filter_panel.update_species_list(species_list)
+            if len(selected_list) == len(self._thumb_grid._photos):
+                self._filter_panel.update_species_list(species_list)
+                idx = self._filter_panel.species_combo.findData(new_name)
+                if idx >= 0:
+                    self._filter_panel.species_combo.setCurrentIndex(idx)
+
+        # 6. 提示更新数量
+        #self._thumb_grid.load_photos(self._thumb_grid._photos, keep_scroll=True)
+        QMessageBox.information(self, "完成", f"已修改 {len(selected_list)} 张照片的鸟种名！")
 
     def _copy_selected_photos(self):
         # 1. 获取选中照片

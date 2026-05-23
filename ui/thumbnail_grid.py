@@ -1092,6 +1092,20 @@ class ThumbnailGrid(QScrollArea):
                 return
             node = node.parent()
 
+    def update_brid_species(self, photo):
+        """
+        仅更新 self._photos 中照片的鸟名数据
+        不操作卡片、不操作UI、完全只改字典
+        """
+        filename = photo.get("filename")
+        for p in self._photos:
+            if p.get("filename") == filename:
+                # 直接同步内存数据
+                p["bird_species_cn"] = photo.get("bird_species_cn", "")
+                p["bird_species_en"] = photo.get("bird_species_en", "")
+                #self._photos.remove(p)
+                break
+
     def keyPressEvent(self, event):
         key = event.key()
         if key in (Qt.Key_Left, Qt.Key_Up):
