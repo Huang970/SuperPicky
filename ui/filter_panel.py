@@ -13,8 +13,10 @@ from PySide6.QtWidgets import (
     QPushButton, QCheckBox, QComboBox, QScrollArea, QFrame, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
+from numpy.ma.core import true_divide
+from sympy import false
 
-from ui.set_qss_util import set_btn_style
+from ui.set_qss_util import set_btn_style,set_checkbox_style,set_combobox_style,update_toogle_btn_style
 from ui.styles import COLORS, FONTS
 
 
@@ -79,6 +81,7 @@ class FilterPanel(QWidget):
         super().__init__(parent)
         self.i18n = i18n
         self._species_list: list = []
+        self._rating_select_all = False
 
         # 当前激活的多选状态（set of mode keys）
         self._active_ratings: set = {_DEFAULT_RATING}
@@ -120,32 +123,8 @@ class FilterPanel(QWidget):
         layout.addWidget(_section_label(self.i18n.t("browser.section_species")))
         self.species_combo = QComboBox()
         self.species_combo.addItem(self.i18n.t("browser.species_all"), "")
-        self.species_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {COLORS['bg_input']};
-                border: 1px solid {COLORS['border']};
-                border-radius: 6px;
-                padding: 6px 12px;
-                color: {COLORS['text_primary']};
-                font-size: 13px;
-            }}
-            QComboBox:hover {{ border-color: {COLORS['text_muted']}; }}
-            QComboBox:focus {{ border-color: {COLORS['accent']}; }}
-            QComboBox::drop-down {{ border: none; width: 20px; }}
-            QComboBox QAbstractItemView {{
-                background-color: {COLORS['bg_elevated']};
-                border: 1px solid {COLORS['border']};
-                border-radius: 6px;
-                color: {COLORS['text_primary']};
-                selection-background-color: {COLORS['accent_dim']};
-                selection-color: {COLORS['accent']};
-                outline: none;
-            }}
-            QComboBox QAbstractItemView::item {{
-                padding: 6px 12px;
-                min-height: 24px;
-            }}
-        """)
+        set_combobox_style(self.species_combo)
+
         self.species_combo.currentIndexChanged.connect(self._emit_filters)
         layout.addWidget(self.species_combo)
 
@@ -165,24 +144,8 @@ class FilterPanel(QWidget):
         row.setSpacing(8)
         self.showBurstCheck = QCheckBox("显示连拍")
         self.showBurstCheck.setChecked(True)
-        self.showBurstCheck.setStyleSheet(f"""
-             QCheckBox {{
-                 color: {COLORS['text_secondary']};
-                 font-size: 12px;
-                 spacing: 4px;
-             }}
-             QCheckBox::indicator {{
-                 width: 14px;
-                 height: 14px;
-                 border-radius: 3px;
-                 border: 1px solid {COLORS['border']};
-                 background: transparent;
-             }}
-             QCheckBox::indicator:checked {{
-                 background-color: {COLORS['accent']};
-                 border-color: {COLORS['accent']};
-             }}
-         """)
+        set_checkbox_style(self.showBurstCheck)
+
         row.addWidget(self.showBurstCheck)
         #layout.addWidget(self.showBurstCheck)
         self.showBurstCheck.clicked.connect(self._on_show_burst_click)
@@ -190,24 +153,8 @@ class FilterPanel(QWidget):
         # 连拍过滤
         self.singlePhotoCheck = QCheckBox("显示单张")
         self.singlePhotoCheck.setChecked(True)
-        self.singlePhotoCheck.setStyleSheet(f"""
-             QCheckBox {{
-                 color: {COLORS['text_secondary']};
-                 font-size: 12px;
-                 spacing: 4px;
-             }}
-             QCheckBox::indicator {{
-                 width: 14px;
-                 height: 14px;
-                 border-radius: 3px;
-                 border: 1px solid {COLORS['border']};
-                 background: transparent;
-             }}
-             QCheckBox::indicator:checked {{
-                 background-color: {COLORS['accent']};
-                 border-color: {COLORS['accent']};
-             }}
-         """)
+        set_checkbox_style(self.singlePhotoCheck)
+
         row.addWidget(self.singlePhotoCheck)
         #layout.addWidget(self.singlePhotoCheck)
         self.singlePhotoCheck.clicked.connect(self._on_show_single_click)
@@ -215,24 +162,8 @@ class FilterPanel(QWidget):
 
         self.expandBurstCheck = QCheckBox("展开全部连拍")
         self.expandBurstCheck.setChecked(True)
-        self.expandBurstCheck.setStyleSheet(f"""
-             QCheckBox {{
-                 color: {COLORS['text_secondary']};
-                 font-size: 12px;
-                 spacing: 4px;
-             }}
-             QCheckBox::indicator {{
-                 width: 14px;
-                 height: 14px;
-                 border-radius: 3px;
-                 border: 1px solid {COLORS['border']};
-                 background: transparent;
-             }}
-             QCheckBox::indicator:checked {{
-                 background-color: {COLORS['accent']};
-                 border-color: {COLORS['accent']};
-             }}
-         """)
+        set_checkbox_style(self.expandBurstCheck)
+
         self.expandBurstCheck.clicked.connect(self._on_expandburst_click)
         layout.addWidget(self.expandBurstCheck)
 
@@ -256,32 +187,8 @@ class FilterPanel(QWidget):
         self._sort_combo.addItem(self.i18n.t("browser.sort_filename"), "filename")
         self._sort_combo.addItem(self.i18n.t("browser.sort_sharpness"), "sharpness_desc")
         self._sort_combo.addItem(self.i18n.t("browser.sort_aesthetic"), "aesthetic_desc")
-        self._sort_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {COLORS['bg_input']};
-                border: 1px solid {COLORS['border']};
-                border-radius: 6px;
-                padding: 6px 12px;
-                color: {COLORS['text_primary']};
-                font-size: 13px;
-            }}
-            QComboBox:hover {{ border-color: {COLORS['text_muted']}; }}
-            QComboBox:focus {{ border-color: {COLORS['accent']}; }}
-            QComboBox::drop-down {{ border: none; width: 20px; }}
-            QComboBox QAbstractItemView {{
-                background-color: {COLORS['bg_elevated']};
-                border: 1px solid {COLORS['border']};
-                border-radius: 6px;
-                color: {COLORS['text_primary']};
-                selection-background-color: {COLORS['accent_dim']};
-                selection-color: {COLORS['accent']};
-                outline: none;
-            }}
-            QComboBox QAbstractItemView::item {{
-                padding: 6px 12px;
-                min-height: 24px;
-            }}
-        """)
+        set_combobox_style(self._sort_combo)
+
         # 恢复用户上次选择（默认锐度）
         saved_sort = self._adv_config.get_browser_sort()
         idx = self._sort_combo.findData(saved_sort)
@@ -291,14 +198,6 @@ class FilterPanel(QWidget):
         layout.addWidget(self._sort_combo)
 
         layout.addStretch()
-
-        # # --- 数量标签 ---
-        # self._count_label = QLabel("")
-        # self._count_label.setAlignment(Qt.AlignCenter)
-        # self._count_label.setStyleSheet(
-        #     f"color: {COLORS['text_muted']}; font-size: 11px; background: transparent;"
-        # )
-        # layout.addWidget(self._count_label)
 
         # --- 重置按钮 ---
         reset_btn = QPushButton(self.i18n.t("browser.reset_filter"))
@@ -387,7 +286,14 @@ class FilterPanel(QWidget):
 
         # 第一行末尾加弹簧，消除多余空白条
         row.addStretch()
-        # --- 数量标签 ---
+
+        # --- 第二行全选/不选按钮 ---
+        self._rating_select_btn = QPushButton("星级全选")
+        update_toogle_btn_style(self._rating_select_btn, True)
+        self._rating_select_btn.clicked.connect(self._toogle_rating_selectall)
+        row2.addWidget(self._rating_select_btn)
+
+        # --- 第二行数量标签 ---
         self._count_label = QLabel("")
         self._count_label.setAlignment(Qt.AlignCenter)
         self._count_label.setStyleSheet(
@@ -398,6 +304,28 @@ class FilterPanel(QWidget):
 
         return container
 
+    def _toogle_rating_selectall(self):
+        self._rating_select_all = not self._rating_select_all
+        #update_toogle_btn_style(self._rating_select_btn, self._rating_select_all)
+
+        if self._rating_select_all:
+            #全选所有星级
+            self._rating_select_btn.setText("取消全选")
+            self._active_ratings = self._active_ratings | {'3','2','1','0','nobird'}
+            for m, btn in self._rating_btns.items():
+                if m != 'picked' and m !='4':
+                    btn.setStyleSheet(self._rating_btn_style(True, m))
+        else:
+            #去除所有星级，只看收藏‘4’
+            self._rating_select_btn.setText("星级全选")
+            # self._active_ratings = {'4'}
+            for m, btn in self._rating_btns.items():
+                if m != 'picked' and m != '4':
+                    self._active_ratings.discard(m)
+                    btn.setStyleSheet(self._rating_btn_style(False, m))
+        #print("Rating", self._active_ratings)
+        self._emit_filters()
+        return
 
     def _rating_btn_style(self, active: bool, mode: str = "") -> str:
         # 精选按钮用金色高亮
@@ -453,23 +381,7 @@ class FilterPanel(QWidget):
             label = label_zh if _is_zh else mode
             cb = QCheckBox(label)
             cb.setChecked(mode in _defaults)
-            cb.setStyleSheet(f"""
-                QCheckBox {{
-                    color: {color};
-                    font-size: 12px;
-                    spacing: 4px;
-                }}
-                QCheckBox::indicator {{
-                    width: 14px; height: 14px;
-                    border-radius: 3px;
-                    border: 1px solid {COLORS['border']};
-                    background: transparent;
-                }}
-                QCheckBox::indicator:checked {{
-                    background-color: {color};
-                    border-color: {color};
-                }}
-            """)
+            set_checkbox_style(cb,color)
             cb.stateChanged.connect(self._emit_filters)
             self._focus_checks[mode] = cb
             row.addWidget(cb)
@@ -500,24 +412,8 @@ class FilterPanel(QWidget):
             cb = QCheckBox(label_text)
             cb.setChecked(True)
             # 样式完全复刻上排，保证视觉统一
-            cb.setStyleSheet(f"""
-                QCheckBox {{
-                    color: {COLORS['text_secondary']};
-                    font-size: 12px;
-                    spacing: 4px;
-                }}
-                QCheckBox::indicator {{
-                    width: 14px;
-                    height: 14px;
-                    border-radius: 3px;
-                    border: 1px solid {COLORS['border']};
-                    background: transparent;
-                }}
-                QCheckBox::indicator:checked {{
-                    background-color: {COLORS['accent']};
-                    border-color: {COLORS['accent']};
-                }}
-            """)
+            set_checkbox_style(cb)
+
             cb.stateChanged.connect(self._emit_filters)
             self._flight_cbs[value] = cb
             row.addWidget(cb)
@@ -549,7 +445,7 @@ class FilterPanel(QWidget):
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )
             self._count_label.setText("⚠ 无结果")
-        elif count < 1000:
+        elif count < 5000:
             self._count_label.setStyleSheet(
                 f"color: {warning_color}; font-size: 11px; background: transparent;"
             )
@@ -573,6 +469,8 @@ class FilterPanel(QWidget):
         idx = self.species_combo.findData(current)
         if idx >= 0:
             self.species_combo.setCurrentIndex(idx)
+        else:
+            self._emit_filters()
         self.species_combo.blockSignals(False)
 
     # ------------------------------------------------------------------

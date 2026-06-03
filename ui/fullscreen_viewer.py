@@ -6,7 +6,6 @@ _FullscreenImageLabel: 支持滚轮缩放 + paintEvent 绘制焦点圆圈/十字
 """
 
 import os
-import sys
 import time
 import threading as _threading
 from collections import OrderedDict
@@ -16,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,QComboBox, QSizePolicy, QApplication
 )
 from PySide6.QtCore import Qt, Signal, QThread, QTimer, Slot, QEvent,QPoint, QRect
-from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush
+from PySide6.QtGui import QPixmap, QImage, QPainter, QPen, QColor, QBrush,QFont
 
 from ui.styles import COLORS, FONTS
 from ui.set_qss_util import update_toogle_btn_style, set_btn_style
@@ -203,7 +202,7 @@ class _FullscreenImageLabel(QLabel):
         self._focus_x: Optional[float] = None
         self._focus_y: Optional[float] = None
         self._focus_status: Optional[str] = None
-        self._focus_visible: bool = True  # 默认显示焦点叠加
+        self._focus_visible: bool = False  # 默认显示焦点叠加
 
         # 缩放/平移状态
         self._fit_mode: bool = True
@@ -1196,8 +1195,8 @@ class FullscreenViewer(QWidget):
         self._focus_btn.setToolTip(self.i18n.t("browser.focus_toggle_tooltip"))
         self._focus_btn.clicked.connect(self._on_focus_btn_clicked)
         h.addWidget(self._focus_btn)
-        # 初始状态：焦点开启 → active 样式
-        update_toogle_btn_style(self._focus_btn, True)
+        # 初始状态：焦点开启 → deactive 样式
+        update_toogle_btn_style(self._focus_btn, False)
 
         # 功能2：锁定缩放按钮
         self._lock_zoom_btn = QPushButton("🔓 缩放")
@@ -1595,6 +1594,36 @@ class FullscreenViewer(QWidget):
                     lambda px, p=_path_capture: self._on_image_ready(px, p)
                 )
                 self._loader.start()
+        else:
+            #图片文件所在路径已不存在，加载空图片
+            # width = self._img_label.width()
+            # height = self._img_label.height()
+            width = 980
+            height = 623
+            pix = QPixmap(width, height)
+            pix.fill(QColor(0, 0, 0))
+
+            painter = QPainter(pix)
+            painter.setRenderHint(QPainter.Antialiasing)
+
+            # 浅灰白边框，更明显
+            pen = QPen(QColor(220, 220, 220))
+            pen.setWidth(1)
+            painter.setPen(pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(0, 0, width - 1, height - 1)
+
+            # 文字
+            font = QFont()
+            font.setPointSize(10)
+            painter.setFont(font)
+            painter.setPen(QColor(200, 200, 200))
+            painter.drawText(pix.rect(), Qt.AlignCenter, "当前照片已被移动位置或删除~~")
+
+            painter.end()
+
+            self._img_label.set_pixmap(pix)
+            self._img_label.fitToView()
 
         # 6. 触发 ±10 预加载
         self._trigger_preload(photo)

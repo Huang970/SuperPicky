@@ -17,10 +17,10 @@ import sys
 import glob
 import shutil
 from collections import Counter
-from ctypes.wintypes import BOOL
 from datetime import datetime
 
-from PySide6 import QtCore
+from send2trash import send2trash
+
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QStatusBar, QFileDialog,
@@ -311,6 +311,12 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
             change_name_action.triggered.connect(parent_widget._change_bird_name)
             menu.addAction(change_name_action)
 
+            delete_app = "删除图片至回收站"
+            delete_name_action = QAction(delete_app, parent_widget)
+            delete_name_action.setEnabled(True)
+            delete_name_action.triggered.connect(parent_widget._move_files_to_trash)
+            menu.addAction(delete_name_action)
+
     # 用户配置的外部应用列表（设置 → 外部应用）
     external_apps = get_advanced_config().get_external_apps()
     if external_apps:
@@ -352,6 +358,45 @@ def _show_context_menu_impl(parent_widget, photo: dict, pos, directory: str):
 
     menu.exec(pos)
 
+class DeletePhotoThread(QThread):
+    # 信号：成功数量、失败列表
+    finished_signal = Signal(int, list)
+
+    def __init__(self, selected_list):
+        super().__init__()
+        self.selected_list = selected_list
+
+    def run(self):
+        moved_count = 0
+        fail_files = []
+        for photo in self.selected_list:
+            try:
+                img_path = photo["current_path"]
+                if not os.path.isfile(img_path):
+                    print("图片已不存在:",img_path)
+                    fail_files.append(f"{img_path}")
+                    continue
+
+                # 匹配 文件名.* （支持同时复制jpg、raw、xml等）
+                base = os.path.splitext(img_path)[0]
+                file_list = glob.glob(base + ".*")
+
+                # 移动到回收站
+                for f in file_list:
+                    try:
+                        full_path = os.path.normpath(f)
+                        send2trash(full_path)
+                        moved_count += 1
+                    except Exception as e:
+                        print("删除失败", e)
+                        fail_files.append(f"{full_path}")
+
+            except Exception as e:
+                fname = photo.get("filename", "未知文件")
+                fail_files.append(f"{fname} -> {str(e)}")
+
+        # 发送结果给UI
+        self.finished_signal.emit(moved_count, fail_files)
 
 def _move_to_trash(filepath: str) -> bool:
     """将文件移入系统回收站（跨平台）。返回是否成功。"""
@@ -711,6 +756,9 @@ class ResultsBrowserWindow(QMainWindow):
             QMessageBox.warning(self, "提示", "请先用Ctrl+鼠标左键选择需要修改鸟种名的图片！")
             return
 
+        selected_count = len(selected_list)
+        cards_count = len(self._thumb_grid._cards)
+
         # 2. 语言判断（和你鸟种名代码完全一样）
         lang = getattr(self.i18n, 'current_lang', 'zh_CN')
         is_zh = not lang.startswith('en')
@@ -763,10 +811,46 @@ class ResultsBrowserWindow(QMainWindow):
         # ==========================
         # 刷新 2：FilterPanel 鸟种下拉（100% 匹配你代码）
         # ==========================
+        #全部更名
+        if selected_count == cards_count:
+            self._refresh_species_list(new_name)
+        else:
+            self._refresh_species_list()
+
+        # if hasattr(self, "_filter_panel"):
+        #     # 从所有照片里重新收集所有鸟种名称
+        #     all_photos = self._all_photos
+        #     species_set = set()
+        #
+        #     for photo in all_photos:
+        #         s = photo.get("bird_species_cn", "") if is_zh else photo.get("bird_species_en", "")
+        #         if s:
+        #             species_set.add(s)
+        #
+        #     # 转成排序后的列表
+        #     species_list = sorted(species_set)
+        #
+        #     # 全部改名
+        #     self._filter_panel.update_species_list(species_list)
+        #     if selected_count == cards_count:
+        #         #self._filter_panel.update_species_list(species_list)
+        #         idx = self._filter_panel.species_combo.findData(new_name)
+        #         if idx >= 0:
+        #             self._filter_panel.species_combo.setCurrentIndex(idx)
+
+        # 6. 提示更新数量
+        #self._thumb_grid.load_photos(self._thumb_grid._photos, keep_scroll=True)
+        QMessageBox.information(self, "完成", f"已修改 {len(selected_list)} 张照片的鸟种名！")
+
+    def _refresh_species_list(self,item_name=""):
         if hasattr(self, "_filter_panel"):
             # 从所有照片里重新收集所有鸟种名称
             all_photos = self._all_photos
             species_set = set()
+
+            # 2. 语言判断（和你鸟种名代码完全一样）
+            lang = getattr(self.i18n, 'current_lang', 'zh_CN')
+            is_zh = not lang.startswith('en')
 
             for photo in all_photos:
                 s = photo.get("bird_species_cn", "") if is_zh else photo.get("bird_species_en", "")
@@ -776,17 +860,65 @@ class ResultsBrowserWindow(QMainWindow):
             # 转成排序后的列表
             species_list = sorted(species_set)
 
-            # 全部改名
+            # 更新鸟种列表
             self._filter_panel.update_species_list(species_list)
-            if len(selected_list) == len(self._thumb_grid._photos):
-                self._filter_panel.update_species_list(species_list)
-                idx = self._filter_panel.species_combo.findData(new_name)
+            # 如原先有选择，尝试恢复
+            if item_name:
+                # 当前列表里是否还存在
+                idx = self._filter_panel.species_combo.findData(item_name)
+                # 如存在，设置选中状态
                 if idx >= 0:
                     self._filter_panel.species_combo.setCurrentIndex(idx)
 
-        # 6. 提示更新数量
-        #self._thumb_grid.load_photos(self._thumb_grid._photos, keep_scroll=True)
-        QMessageBox.information(self, "完成", f"已修改 {len(selected_list)} 张照片的鸟种名！")
+
+    def _move_files_to_trash(self):
+        # 1. 获取选中照片
+        selected_list = self._thumb_grid.get_multi_selected_photos()
+        if not selected_list:
+            QMessageBox.warning(self, "提示", "请先用Ctrl+鼠标左键选择需要删除的图片！")
+            return
+        files = len(selected_list)
+
+        for photo in selected_list:
+            try:
+                # DB 删除
+                if self._db:
+                    self._db.delete_photo(_photo_db_key(photo))
+
+                # 从内存列表移除
+                target_identity = _photo_identity(photo)
+                self._filtered_photos = [p for p in self._filtered_photos if _photo_identity(p) != target_identity]
+                self._all_photos = [p for p in self._all_photos if _photo_identity(p) != target_identity]
+                self._raw_filtered_photos = [p for p in self._raw_filtered_photos if _photo_identity(p) != target_identity]
+
+                # 直接从缩略图移除
+                self._thumb_grid.remove_photo(photo)
+            except Exception as e:
+                print("_move_files_to_trash error:", e)
+
+        #如果连拍组未展开，重建缩略图并刷新
+        if not self._filter_panel.expandBurstCheck.isChecked():
+            self._update_display_list()
+
+        #重建鸟种下拉框
+        self._refresh_species_list()
+
+        # 更新全屏查看列表
+        self._fullscreen.set_photo_list(self._filtered_photos)
+
+        # 2. 启动后台线程删除（UI不阻塞）
+        self.delete_thread = DeletePhotoThread(selected_list)
+        self.delete_thread.finished_signal.connect(self._on_delete_photos_finished)
+        self.delete_thread.start()
+
+        # 3.立即提示
+        self.window()._briefly_display_status(f"后台正在删除{files}张图片，请稍后...")
+
+    def _on_delete_photos_finished(self, success_count, fail_files):
+        msg = f"删除成功：{success_count} 张"
+        if fail_files:
+            msg += f" 失败：{len(fail_files)} 张"
+        self.window()._briefly_display_status(msg)
 
     def _copy_selected_photos(self):
         # 1. 获取选中照片
@@ -1067,6 +1199,7 @@ class ResultsBrowserWindow(QMainWindow):
         self._filter_panel.update_species_list(species)
 
         raw_photos = self._db.get_photos_by_filters(filters)
+        #print("DB filter Data count:",len(raw_photos))
         resolved_photos = [self._resolve_photo_paths(p) for p in raw_photos]
         # ===================== ✅ 强制生效 =====================
         if self._filter_panel.is_show_burst() and self._filter_panel.is_show_single():
@@ -1430,8 +1563,22 @@ class ResultsBrowserWindow(QMainWindow):
         ) or {}
         filename = current_photo.get("filename") or (photo_or_filename if isinstance(photo_or_filename, str) else "")
         db_key = _photo_db_key(current_photo) if current_photo else filename
+        upddata = {}
         if self._db:
-            self._db.update_photo(db_key, {"rating": new_rating})
+            # -1 ,0 星照片如果星级调整，为了按星级能正常过滤，调整对焦和姿态值。
+            focus =  current_photo.get("focus_status")
+            #print("FOCUS",focus)
+            if focus is None or not focus:
+                upddata["focus_status"] = "WORST"
+            is_flying = current_photo.get("is_flying")
+            #print("is flying",is_flying)
+            if is_flying is None:
+                upddata["is_flying"] = 0
+            upddata["rating"] = new_rating
+            #print("UPDATE:",upddata)
+            #self._db.update_photo(db_key, {"rating": new_rating})
+            self._db.update_photo(db_key, upddata)
+
         for p in self._filtered_photos:
             if _photo_identity(p) == _photo_identity(current_photo) or (
                 not current_photo and p.get("filename") == filename
@@ -1557,13 +1704,25 @@ class ResultsBrowserWindow(QMainWindow):
 
         # 2. 移入回收站
         filepath = photo.get("current_path") or photo.get("original_path") or ""
-        if filepath and not _move_to_trash(filepath):
-            QMessageBox.warning(
-                self,
-                self.i18n.t("browser.delete_failed"),
-                self.i18n.t("browser.delete_failed_msg").format(error=filepath)
-            )
-            return
+        # 匹配 文件名.* （支持同时复制jpg、raw、xml等）
+        base = os.path.splitext(filepath)[0]
+        file_list = glob.glob(base + ".*")
+
+        # 移动到回收站
+        for f in file_list:
+            try:
+                full_path = os.path.normpath(f)
+                send2trash(full_path)
+            except Exception as e:
+                print("删除失败", e)
+
+        # if filepath and not _move_to_trash(filepath):
+        #     QMessageBox.warning(
+        #         self,
+        #         self.i18n.t("browser.delete_failed"),
+        #         self.i18n.t("browser.delete_failed_msg").format(error=filepath)
+        #     )
+        #     return
 
         # 3. DB 删除
         if self._db:
@@ -1628,6 +1787,9 @@ class ResultsBrowserWindow(QMainWindow):
         if Qt.Key_0 <= key <= Qt.Key_5:
             num = key - Qt.Key_0
             self._detail_panel._set_rating(num)
+            selected_list = self._thumb_grid.get_multi_selected_photos()
+            for photo in selected_list:
+                self._detail_panel.rating_change_requested.emit(photo,num)
             return
 
         #CTRL+A，缩略图全选

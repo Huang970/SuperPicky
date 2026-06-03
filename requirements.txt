@@ -1,3 +1,4 @@
+--index-url https://pypi.tuna.tsinghua.edu.cn/simple
 # SuperPicky default dependency set (CPU build).
 # For NVIDIA CUDA build, use requirements_cuda.txt instead.
 
@@ -10,3 +11,4 @@ torchvision==0.22.1+cpu
 torchaudio==2.7.1+cpu
 pyinstaller
 lap
+send2trash

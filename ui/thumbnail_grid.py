@@ -945,6 +945,31 @@ class ThumbnailGrid(QScrollArea):
         if self._selected_key == photo_key:
             self._selected_key = None
 
+        # ==========================================
+        # 【关键修复】强制 QGridLayout 重新排列所有卡片
+        # ==========================================
+        self._rearrange_grid_after_remove()
+
+    def _rearrange_grid_after_remove(self):
+        """删除后重新排列网格，消除黑框"""
+        # 先清空所有布局项
+        while self._grid.count() > 0:
+            item = self._grid.takeAt(0)
+
+        # 重新按顺序添加所有卡片
+        col_count = self._current_col_count
+        for idx, photo in enumerate(self._photos):
+            key = _photo_key(photo)
+            card = self._cards.get(key)
+            if not card:
+                continue
+            row, col = divmod(idx, col_count)
+            self._grid.addWidget(card, row, col)
+
+        # 刷新布局
+        self._container.update()
+        self.viewport().update()
+
     def select_photo(self, photo_or_key):
         """高亮选中指定照片卡片。"""
         photo_key = _photo_key(photo_or_key) if isinstance(photo_or_key, dict) else photo_or_key
@@ -1093,18 +1118,14 @@ class ThumbnailGrid(QScrollArea):
             node = node.parent()
 
     def update_brid_species(self, photo):
-        """
-        仅更新 self._photos 中照片的鸟名数据
-        不操作卡片、不操作UI、完全只改字典
-        """
         filename = photo.get("filename")
         for p in self._photos:
             if p.get("filename") == filename:
                 # 直接同步内存数据
                 p["bird_species_cn"] = photo.get("bird_species_cn", "")
                 p["bird_species_en"] = photo.get("bird_species_en", "")
-                #self._photos.remove(p)
                 break
+        self.remove_photo(photo)
 
     def keyPressEvent(self, event):
         key = event.key()

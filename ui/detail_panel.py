@@ -93,6 +93,7 @@ def _format_file_size(num_bytes: int) -> str:
 
 def _make_value_label(text: str = "—") -> QLabel:
     lbl = QLabel(text)
+    lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
     lbl.setStyleSheet(f"""
         QLabel {{
             color: {COLORS['text_primary']};
@@ -106,6 +107,10 @@ def _make_value_label(text: str = "—") -> QLabel:
 
 
 class _NoWrapLabel(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setTextInteractionFlags(Qt.TextSelectableByMouse)
+
     """单行不换行的 QLabel：minimumSizeHint 返回小宽度，避免撑宽父容器。"""
     def minimumSizeHint(self):
         h = super().minimumSizeHint()
@@ -123,6 +128,7 @@ class _ZoomableImageLabel(QLabel):
         self.setMinimumSize(100, 100)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setStyleSheet(f"background-color: {COLORS['bg_void']}; border-radius: 8px;")
+        self.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
     def set_pixmap(self, pixmap: QPixmap):
         self._original = pixmap
@@ -383,22 +389,39 @@ class DetailPanel(QWidget):
         self._val_caption.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 11px; font-family: {FONTS['mono']}; background: transparent;")
         self._val_caption.setWordWrap(True)
 
+        # rows = [
+        #     ("browser.meta_focus",      self._val_focus),
+        #     ("browser.meta_sharpness",  self._val_sharpness),
+        #     ("browser.meta_aesthetic",  self._val_aesthetic),
+        #     ("browser.meta_flying",     self._val_flying),
+        #     ("browser.meta_species",    self._val_species),
+        #     ("browser.meta_camera",     self._val_camera),
+        #     ("browser.meta_lens",       self._val_lens),
+        #     ("browser.meta_shutter",    self._val_shutter),
+        #     ("browser.meta_iso",        self._val_iso),
+        #     ("browser.meta_focal",      self._val_focal),
+        #     ("browser.meta_confidence", self._val_confidence),
+        #     ("browser.meta_filesize",   self._val_filesize),
+        #     ("browser.meta_filename",   self._val_filename),
+        #     ("browser.meta_datetime",   self._val_datetime),
+        # ]
         rows = [
             ("browser.meta_focus",      self._val_focus),
             ("browser.meta_sharpness",  self._val_sharpness),
             ("browser.meta_aesthetic",  self._val_aesthetic),
-            ("browser.meta_flying",     self._val_flying),
             ("browser.meta_species",    self._val_species),
+            ("browser.meta_confidence", self._val_confidence),
+            ("browser.meta_flying",     self._val_flying),
             ("browser.meta_camera",     self._val_camera),
             ("browser.meta_lens",       self._val_lens),
             ("browser.meta_shutter",    self._val_shutter),
             ("browser.meta_iso",        self._val_iso),
             ("browser.meta_focal",      self._val_focal),
-            ("browser.meta_confidence", self._val_confidence),
+            ("browser.meta_datetime",   self._val_datetime),
             ("browser.meta_filesize",   self._val_filesize),
             ("browser.meta_filename",   self._val_filename),
-            ("browser.meta_datetime",   self._val_datetime),
         ]
+
         for key, val_widget in rows:
             form.addRow(_lbl(key), val_widget)
 

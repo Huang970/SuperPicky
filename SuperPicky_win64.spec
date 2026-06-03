@@ -19,6 +19,7 @@ pillow_heif_datas = collect_data_files('pillow_heif')
 
 all_datas = [
     (os.path.join(base_path, 'models'), 'models'),
+#    (os.path.join(base_path, 'ui'), 'ui'),
     (os.path.join(base_path, 'exiftools_win'), 'exiftools_win'),
     (os.path.join(base_path, 'img'), 'img'),
     (os.path.join(base_path, 'locales'), 'locales'),
@@ -55,6 +56,7 @@ a = Analysis(
         'birdid', 'birdid.bird_identifier', 'birdid.ebird_country_filter',
         'birdid_server', 'server_manager', 'flask', 'flask.json',
         'cryptography', 'cryptography.fernet',
+        'send2trash',
     ],
     hookspath=[],
     hooksconfig={},
